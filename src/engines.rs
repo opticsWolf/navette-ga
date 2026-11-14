@@ -320,8 +320,8 @@ mod tests {
     };
     use navette::smatrix::synthesis::structure::LayerSpec;
 
-    use crate::bridge::EvaluatorOptions;
-    use crate::decoder::{Material, MaterialPool};
+    use crate::bridge::{BoundaryRules, EvaluatorOptions};
+    use crate::decoder::{AdjacencyGrammar, Material, MaterialPool, Pins};
 
     fn constant(name: &str, n: f64, d_nm: f64) -> LayerSpec {
         LayerSpec::constant(name, n, 0.0, d_nm, 1)
@@ -356,6 +356,45 @@ mod tests {
         })
         .unwrap();
         spec
+    }
+
+    #[test]
+    fn recipe_a_refuses_an_insert_grammar_conflict() {
+        let pool = MaterialPool::new(vec![
+            Material::new("H", 20.0, 200.0).unwrap(),
+            Material::new("L", 10.0, 150.0).unwrap(),
+        ])
+        .unwrap();
+        let grammar =
+            AdjacencyGrammar::from_allowed(vec![vec![true, false], vec![true, true]]).unwrap();
+        let decoder = Decoder::new(pool, Pins::none(), grammar).unwrap();
+        let rules = BoundaryRules {
+            insert: Some(
+                [("H".to_string(), vec!["L".to_string()])]
+                    .into_iter()
+                    .collect(),
+            ),
+            ..BoundaryRules::default()
+        };
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0),
+            constant("substrate", 1.52, 0.0),
+            vec![constant("H", 2.2, 0.0), constant("L", 1.46, 0.0)],
+        )
+        .unwrap()
+        .with_boundary_rules(rules)
+        .unwrap();
+        let evaluator = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            zero_spec(),
+            EvaluatorOptions::default(),
+        )
+        .unwrap();
+
+        let err =
+            run_recipe_a(&decoder, &template, &evaluator, &RecipeAConfig::default()).unwrap_err();
+        assert!(err.contains("insert/grammar conflict"), "{err}");
     }
 
     #[test]
