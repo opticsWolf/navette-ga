@@ -52,8 +52,8 @@ amendments are implemented by the owner, never requested.*
   expected to fail verification meanwhile.
 - **Remaining:** A2 (Jacobian/merit introspection), A4 (native bounds/grammar
   API), and the remaining Phase 2 of §2.4.1 (spectral joint scan/polish runs,
-  `run_needle_cycles` equivalence, diffusion-barrier acceptance,
-  multi-material joint validation).
+  `run_needle_cycles` equivalence, diffusion-barrier acceptance, and full
+  multi-material joint runs).
 
 ## 0. What navette already is (and why the strategy collapses around it)
 
