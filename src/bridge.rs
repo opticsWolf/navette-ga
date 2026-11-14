@@ -905,6 +905,24 @@ mod tests {
         assert!(!sites.iter().any(|site| site.needle == g
             && (site.gap == Gap { seg: 0, k: 0 } || site.gap == Gap { seg: 0, k: 2 })));
 
+        // A multi-material edge list is a set of legal edge films, not a
+        // pin: G joins each list and is accepted at both segment edges.
+        let mut multi = request.clone();
+        let coat = multi.design.get_mut("coat").unwrap();
+        coat.outer = Some(vec!["H".to_string(), "G".to_string()]);
+        coat.inner = Some(vec!["L".to_string(), "G".to_string()]);
+        let (multi_envs, multi_pool, _) = build_environments(&multi, &[550.0]).unwrap();
+        let multi_stacks = multi_envs.expand(&multi_envs.stacks()[0]).unwrap();
+        let multi_g = multi_pool
+            .iter()
+            .position(|entry| entry.material.as_ref() == "G")
+            .unwrap();
+        for gap in [Gap { seg: 0, k: 0 }, Gap { seg: 0, k: 2 }] {
+            assert!(
+                joint_gap_accepts(&multi_envs, &multi_stacks, &multi_pool, gap, multi_g).unwrap()
+            );
+        }
+
         let after: Vec<Vec<f64>> = stacks
             .iter()
             .map(|stack| stack.films().iter().map(|film| film.d_nm).collect())
