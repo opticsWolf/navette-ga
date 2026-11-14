@@ -26,8 +26,7 @@ against host and edge rules; single-material edges become pins, multi-material
 edges validate at assembly, and seeding is rejected. The Phase 2 island
 driver is in place (`run_recipe_a_islands`: ring, one best migrant capped at
 5%, best-replace-worst-if-better). Joint boundary needles, joint gaps,
-multi-material edge checks, constraint-regime tribes, dynamic parsimony
-ramps, and A2/A4 remain. Publishing waits for a navette release containing A1/A3. The specification of
+multi-material edge checks, constraint-regime tribes, and A2/A4 remain. Publishing waits for a navette release containing A1/A3. The specification of
 record is
 [`E09_rust_implementation_strategy_v2.md`](docs/strategy/E09_rust_implementation_strategy_v2.md)
 and [`E10_cherrypick_reassembly_v2.md`](docs/strategy/E10_cherrypick_reassembly_v2.md).

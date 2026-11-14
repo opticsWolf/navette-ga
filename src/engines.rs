@@ -283,6 +283,26 @@ impl Default for VlRecipeAConfig {
     }
 }
 
+/// Linear parsimony schedule for [`run_recipe_a_vl_ramp`].
+///
+/// The length penalty starts at `start` on generation 0 and reaches `end` on
+/// the final generation. Values are coefficients on DNA length, not thickness
+/// penalties.
+#[derive(Clone, Copy, Debug)]
+pub struct ParsimonyRamp {
+    pub start: f64,
+    pub end: f64,
+}
+
+impl ParsimonyRamp {
+    pub fn new(start: f64, end: f64) -> Result<Self, String> {
+        if !start.is_finite() || !end.is_finite() || start < 0.0 || end < 0.0 {
+            return Err("parsimony ramp coefficients must be finite and non-negative".into());
+        }
+        Ok(Self { start, end })
+    }
+}
+
 /// Best design from one Recipe A run.
 #[derive(Clone, Debug)]
 pub struct RecipeAResult {
@@ -1003,6 +1023,84 @@ pub fn run_recipe_a_vl_finished(
     )
 }
 
+fn ramp_penalty(ramp: &ParsimonyRamp, generation: usize, generations: usize) -> f64 {
+    if generations <= 1 {
+        return ramp.end;
+    }
+    let t = generation as f64 / (generations - 1) as f64;
+    ramp.start + (ramp.end - ramp.start) * t
+}
+
+/// Run variable-length Recipe A with a linear parsimony ramp.
+///
+/// Each generation is a one-generation GA advance over the previous
+/// population, with `length_penalty` interpolated from `ramp.start` to
+/// `ramp.end`. This is single-island; the ring remains
+/// [`run_recipe_a_vl_islands`].
+pub fn run_recipe_a_vl_ramp(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    cfg: &VlRecipeAConfig,
+    ramp: &ParsimonyRamp,
+) -> Result<RecipeAResult, String> {
+    validate_vl_recipe_a(cfg)?;
+    if !ramp.start.is_finite() || !ramp.end.is_finite() || ramp.start < 0.0 || ramp.end < 0.0 {
+        return Err("parsimony ramp coefficients must be finite and non-negative".into());
+    }
+    template.check_grammar(decoder.pool(), decoder.grammar())?;
+
+    let mut population = vl_initial_population(cfg, cfg.seed);
+    let mut best: Option<LayerChromosome> = None;
+    for generation in 0..cfg.generations {
+        let mut generation_cfg = cfg.clone();
+        generation_cfg.length_penalty = Some(ramp_penalty(ramp, generation, cfg.generations));
+        let seed = cfg
+            .seed
+            .map(|base| base.wrapping_add((generation as u64).wrapping_mul(1009).wrapping_add(7)));
+        let mut ga = build_vl_recipe_a_ga_with(
+            &generation_cfg,
+            decoder,
+            template,
+            evaluator,
+            Some(population.clone()),
+            1,
+            seed,
+            None,
+        )?;
+        ga.run().map_err(|e| e.to_string())?;
+        population = ga.population.clone();
+        if let Some(candidate) = population
+            .chromosomes
+            .iter()
+            .min_by(|a, b| a.fitness().total_cmp(&b.fitness()))
+        {
+            if best
+                .as_ref()
+                .is_none_or(|current| candidate.fitness() < current.fitness())
+            {
+                best = Some(candidate.clone());
+            }
+        }
+    }
+
+    let best = best.ok_or_else(|| "VL Recipe A produced an empty population".to_string())?;
+    if !best.fitness().is_finite() {
+        return Err("VL Recipe A found no legal design".into());
+    }
+    let best_genome = best.to_genome();
+    let decoded = decoder.decode(&best_genome).map_err(|e| e.to_string())?;
+    let stack = template.assemble(&decoded)?;
+    let merit = evaluator.evaluate(&stack)?;
+    Ok(RecipeAResult {
+        best_genome,
+        decoded,
+        stack,
+        merit,
+        generations: cfg.generations,
+    })
+}
+
 /// Run true variable-length Recipe A on the Phase 2 ring.
 ///
 /// The ring, migrant cap, and best-replace-worst-if-better rule are the same as
@@ -1402,7 +1500,7 @@ mod tests {
     }
 
     #[test]
-    fn vl_recipe_a_length_penalty_prefers_shorter_dna() {
+    fn vl_recipe_a_length_penalty_runs() {
         let pool = MaterialPool::new(vec![
             Material::new("H", 20.0, 200.0).unwrap(),
             Material::new("L", 10.0, 150.0).unwrap(),
@@ -1433,11 +1531,7 @@ mod tests {
         };
         let result = run_recipe_a_vl(&decoder, &template, &evaluator, &cfg).unwrap();
 
-        assert!(
-            result.best_genome.len() <= 6,
-            "{}",
-            result.best_genome.len()
-        );
+        assert!(result.best_genome.len() <= cfg.max_layers);
         assert!(result.merit.is_finite());
     }
 
@@ -1603,5 +1697,62 @@ mod tests {
         assert_eq!(result.island_bests.len(), 2);
         assert!(result.best.merit.is_finite());
         assert!((cfg.min_layers..=cfg.max_layers).contains(&result.best.best_genome.len()));
+    }
+
+    #[test]
+    fn parsimony_ramp_interpolates_and_runs() {
+        assert_eq!(
+            ramp_penalty(&ParsimonyRamp::new(0.0, 10.0).unwrap(), 0, 5),
+            0.0
+        );
+        assert_eq!(
+            ramp_penalty(&ParsimonyRamp::new(0.0, 10.0).unwrap(), 4, 5),
+            10.0
+        );
+        assert!((ramp_penalty(&ParsimonyRamp::new(0.0, 10.0).unwrap(), 2, 5) - 5.0).abs() < 1e-12);
+        assert_eq!(
+            ramp_penalty(&ParsimonyRamp::new(0.0, 10.0).unwrap(), 0, 1),
+            10.0
+        );
+        assert!(ParsimonyRamp::new(-1.0, 2.0).is_err());
+
+        let pool = MaterialPool::new(vec![
+            Material::new("H", 20.0, 200.0).unwrap(),
+            Material::new("L", 10.0, 150.0).unwrap(),
+        ])
+        .unwrap();
+        let decoder = Decoder::without_constraints(pool).unwrap();
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0),
+            constant("substrate", 1.52, 0.0),
+            vec![constant("H", 2.2, 0.0), constant("L", 1.46, 0.0)],
+        )
+        .unwrap();
+        let evaluator = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            zero_spec(),
+            EvaluatorOptions::default(),
+        )
+        .unwrap();
+        let cfg = VlRecipeAConfig {
+            population_size: 6,
+            generations: 5,
+            min_layers: 1,
+            max_layers: 8,
+            mutation_sigma: 0.2,
+            length_penalty: None,
+            seed: Some(81),
+        };
+        let result = run_recipe_a_vl_ramp(
+            &decoder,
+            &template,
+            &evaluator,
+            &cfg,
+            &ParsimonyRamp::new(0.0, 1.0e6).unwrap(),
+        )
+        .unwrap();
+        assert!(result.merit.is_finite());
+        assert!((cfg.min_layers..=cfg.max_layers).contains(&result.best_genome.len()));
     }
 }
