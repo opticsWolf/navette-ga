@@ -33,4 +33,4 @@ pub mod bench;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The current implementation phase.
-pub const STATUS: &str = "Phase 0: decoder + bridge core; A3 on navette dev_ga";
+pub const STATUS: &str = "Phase 0: decoder + bridge core; A3 wired via navette dev_ga";

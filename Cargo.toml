@@ -23,9 +23,14 @@ default = []
 bench = ["dep:kurobako"]
 
 [dependencies]
-# Optics engine: owner crate, dependency only until A5 decides (never copied).
-# The path is used for a sibling checkout and is stripped on `cargo publish`;
-# when this package is added to Navette as a member, change it to `../navette`.
+# Optics engine: owner crate, dependency only (never copied). The path is the
+# sibling Navette checkout, currently on the `dev_ga` branch, and is stripped on
+# `cargo publish`; when this package is added to Navette as a member, change it
+# to `../navette`.
+#
+# Release gate: the bridge uses navette's A3 `evaluate_many`, which is on
+# `dev_ga` but not in the published 0.10.0. Bump this requirement once navette
+# ships A3; until then `cargo publish` will fail verification by design.
 navette = { version = "0.10.0", path = "../Navette/rust/navette", features = [
     "opt-basin",
 ] }

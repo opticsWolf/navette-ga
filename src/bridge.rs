@@ -200,17 +200,15 @@ impl FitnessEvaluator {
         self.ctx.evaluate_merit(stack)
     }
 
-    /// Evaluate a generation in input order.
+    /// Evaluate a generation in input order through navette's A3 batch door.
     ///
-    /// This is the stable bridge API. A3 `SmatrixContext::evaluate_many` is
-    /// implemented on navette's `dev_ga` branch (commit `1dd0fa6`), but not
-    /// yet in a published navette release; this body therefore stays
-    /// sequential so the crate still builds against navette 0.10.0. It
-    /// switches to the batch door when that API ships; that door fans the
-    /// population out through Rayon while each solve keeps its own grid
-    /// parallelism.
+    /// A3 lives on navette's `dev_ga` branch and is compiled in by the local
+    /// path dependency. The call fans the population out through Rayon while
+    /// each solve keeps its own grid parallelism. A published navette release
+    /// containing A3 is required before this crate can be published; see the
+    /// release-gate note on the navette dependency in `Cargo.toml`.
     pub fn evaluate_batch(&self, stacks: &[DesignStack]) -> Result<Vec<f64>, String> {
-        stacks.iter().map(|stack| self.evaluate(stack)).collect()
+        self.ctx.evaluate_many(stacks)
     }
 
     /// Bounded LM thickness finish, in place. Returns the post-finish merit.
