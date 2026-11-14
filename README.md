@@ -8,9 +8,12 @@ This is the working repository for the strategy set in
 decoding, islands/tribes, needle-memetic refinement, multi-objective splits,
 quality-diversity archives, and the study/proof layer around them.
 
-**Status:** Phase 0 scaffold. The package and module boundaries are in place;
-the modules are documented but not implemented yet. The specification of
-record is
+**Status:** Phase 0 in progress. `ga::decoder` (G2) and the `ga::bridge` core
+(G1) are implemented and tested: variable-length keys, material bounds, edge
+pins, adjacency repair, navette stack assembly, joint-merit evaluation, and
+the LM finish. Closed-form quarter-wave and V-coat checks pass, and the G9
+micro-bench is runnable. A3 batch evaluation is implemented on Navette's
+`dev_ga` branch; A1/A2/A4 remain. The specification of record is
 [`E09_rust_implementation_strategy_v2.md`](docs/strategy/E09_rust_implementation_strategy_v2.md)
 and [`E10_cherrypick_reassembly_v2.md`](docs/strategy/E10_cherrypick_reassembly_v2.md).
 
@@ -33,6 +36,8 @@ src/
   study.rs                 # G7: blackopt/optimizer study wiring
   bench.rs                 # G8/G9: kurobako problems + perf harness (feature)
   main.rs                  # Recipe A/B binary scaffold
+examples/
+  phase0_bench.rs          # G9: 61-wavelength evaluate/LM timing harness
 docs/
   README.md                # research/paper index
   integration.md           # how to add or link this crate in Navette
