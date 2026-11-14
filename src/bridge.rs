@@ -911,7 +911,7 @@ mod tests {
         let coat = multi.design.get_mut("coat").unwrap();
         coat.outer = Some(vec!["H".to_string(), "G".to_string()]);
         coat.inner = Some(vec!["L".to_string(), "G".to_string()]);
-        let (multi_envs, multi_pool, _) = build_environments(&multi, &[550.0]).unwrap();
+        let (mut multi_envs, multi_pool, _) = build_environments(&multi, &[550.0]).unwrap();
         let multi_stacks = multi_envs.expand(&multi_envs.stacks()[0]).unwrap();
         let multi_g = multi_pool
             .iter()
@@ -921,6 +921,21 @@ mod tests {
             assert!(
                 joint_gap_accepts(&multi_envs, &multi_stacks, &multi_pool, gap, multi_g).unwrap()
             );
+        }
+        let mut multi_design = multi_envs.stacks()[0].clone();
+        let (slot, inserted) = joint_gap_insert(
+            &mut multi_envs,
+            &mut multi_design,
+            &multi_pool,
+            Gap { seg: 0, k: 0 },
+            multi_g,
+            15.0,
+        )
+        .unwrap();
+        assert_eq!(slot, 0);
+        for stack in &inserted {
+            assert_eq!(stack.films()[0].material.as_ref(), "G");
+            assert_eq!(stack.films()[0].d_nm, 15.0);
         }
 
         let after: Vec<Vec<f64>> = stacks
