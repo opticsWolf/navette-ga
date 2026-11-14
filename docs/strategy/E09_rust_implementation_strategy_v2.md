@@ -6,10 +6,13 @@
 
 *Derived from `PAPER_ga_thinfilm_strategies_v4.md` (S1–S10, Recipes A/B,
 Appendices A/B) with crate picks from `E00_rust_crates_consolidated.md`
-(55 crates). Responds to the independent technical review (19 findings,
-10 gaps, 10 risks): all E09-directed findings repaired, all gaps scheduled,
-all risks owned. Ground rule from the user: **navette owns the optics** —
-scatter (S-) matrix, not TMM, plus its native needle algorithm. Everything
+(55 crates). Responds to the independent technical review: round 1 (19
+findings, 10 gaps, 10 risks) plus round 2 (E15/E16 migration policy and
+parent-pool scope, G11 cross-island recombination, R11 island-policy risk) —
+21 findings, 11 gaps, 11 risks. All E09-directed findings repaired, all gaps
+scheduled, all risks owned. Ground rule from the user: **navette owns the
+optics** — scatter (S-) matrix, not TMM, plus its native needle algorithm.
+Everything
 else is assigned below. Architecture decision (review C3, jointly recorded
 with E10 v2): **E10 governs the three named copies** (VL chromosome +
 operators, island-driver skeleton, symbios fork) **and E09 governs every
@@ -194,10 +197,19 @@ rank-sum tests with multiplicity correction. Classical control arm H0
 own programme, the strongest competitor at 5–10 layers, scheduled first so a
 negative result narrows S2–S4 honestly instead of late.
 
+Island-policy experiment I1 (review G11, round 2): cross-island multi-parent
+crossover is registered separately from H0–H7 and follows the same fixed-seed
+protocol; it reports merit/depth at fixed budget plus a homogenisation metric
+(pairwise island distance / material-mix entropy). The default remains
+migrate-then-mate-locally; PAPER v4 §9 fixes the migration policy.
+
 **2.8 Recipe mapping.** Recipe A: G1+G2+G3(rung 2) + single island +
 terminal navette needle + LM. Recipe B: full stack — seeding (S8 proposals via
-enqueue, mined-motif fallback armed), S5 rung 3, S3 heterogeneous islands/tribes, S2 via G4, S4 archive
-throughout, S6 moors split, S7 screening past TMM, S10 registration.
+enqueue, mined-motif fallback armed), S5 rung 3, S3 heterogeneous
+islands/tribes under PAPER v4 §9's migration policy (ring, k=10, one best
+migrant, best-replace-worst-if-better), S2 via G4, S4 archive throughout, S6
+moors split, S7 screening past TMM, S10 registration. I1 (cross-island
+multi-parent) is an experiment on top, not part of the default stack.
 
 **2.9 Navette amendments (A1–A6, owner-implemented)**
 
@@ -294,25 +306,28 @@ stands on E00 picks.
   scanned candidate insertion improves the joint merit, LM converged,
   d_min-stable (review C2; discrete scope stated, P(z)≈0 reserved for
   post-A6 campaigns). Exit: fabricated-plausible stack + ledger entry.
-- **Phase 2 — Recipe B core (month):** heterogeneous islands/tribes, G4(a)
-  needle-memetic, dynamic parsimony, moors split (S6), rung-3 pool, H0 control
-  arm running in parallel (review G1/R6: if the control wins at equal
-  compute, S2–S4 narrow to refinement machinery honestly). Exit: 40-layer
-  filter + merit-vs-depth map (S4-lite via symbios grid). Budget box (review
+- **Phase 2 — Recipe B core (month):** heterogeneous islands/tribes under the
+  PAPER v4 §9 migration policy (ring, k=10, one best migrant,
+  best-replace-worst-if-better with legality repair), G4(a) needle-memetic,
+  dynamic parsimony, moors split (S6), rung-3 pool, H0 control arm running in
+  parallel (review G1/R6: if the control wins at equal compute, S2–S4 narrow
+  to refinement machinery honestly). Exit: 40-layer filter + merit-vs-depth
+  map (S4-lite via symbios grid). Budget box (review
   G8, parametric): population evals dominate — P individuals × G generations
   millisecond-scale solves is tens of minutes at 64×200; memetic overhead per
   round (top-m designs × scan-ms + LM-tens-of-ms) stays single-digit percent
   at every-k cadences — the cadence k is the budget knob; redo this arithmetic
   with measured numbers before freezing Phase 2 exits (review R8).
 - **Phase 3 — archives + studies (month):** F1 MOME, G5/G6 (SAIL/DQD),
-  G7 study layer, G8 registration, §1.1 copy gate evaluated. Exit: the H0–H7
-  comparison set (H1–H7 = S1/S2/S3/S4/S6/S7/S8 embodiments, H0 = classical
-  needle-plus-refinement multi-start; review R9) rerunnable by a third party
-  under the §2.7 statistical protocol.
+  G7 study layer, G8 registration, I1 cross-island multi-parent experiment
+  (G11, reported separately from H0–H7), §1.1 copy gate evaluated. Exit: the
+  H0–H7 comparison set (H1–H7 = S1/S2/S3/S4/S6/S7/S8 embodiments, H0 =
+  classical needle-plus-refinement multi-start; review R9) rerunnable by a
+  third party under the §2.7 statistical protocol.
 - **Phase 4 — frontier (quarter):** F2/F3/F4, full-wave evaluator entry via
   SAIL. Exit: V9/V21 ablations published, V12 re-cited.
 
-## 6. Risks (review R1–R10, owned)
+## 6. Risks (review R1–R11, owned)
 
 1. **§10 sign errors → future P(z) feature (R1, high but contained):** the
    empirical scan stays the needle of record; M1–M3 repaired in v4 Appendix A;
@@ -337,6 +352,12 @@ stands on E00 picks.
    the Phase 3 exit is now evaluable.
 10. **Scale claims past the teaching example (R10, low):** v4 §1 scopes them
     as hypothesis (work item 6: catalogue witness or narrow the claim).
+11. **Island policy homogenises or starves heterogeneous islands (R11,
+    low–medium):** PAPER v4 §9 fixes ring topology, k=10, one best migrant,
+    best-replace-worst-if-better, and within-island mating. Validate against a
+    single-island ablation and I1 under the §2.7 protocol; if pairwise island
+    distance collapses, raise k or lower the migration rate before adding
+    operators.
 
 *Sources: navette crates.io meta 2026-11-09, upstream README, `rust/navette/
 Cargo.toml` (features incl. opt-basin/opt-argmin/opt-minpack-lm), PAPER v4

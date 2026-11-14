@@ -4,12 +4,15 @@
 concepts, November 2026). Every strategic recommendation carries an evidence
 tag — **confirmed**, **re-derived**, **qualified**, **heuristic**, **transfer**,
 or **gap** — defined in §17. v4 is the review-response revision: an independent
-technical review (18 pp., ingested as the Technical Review concept) re-derived
-the §10 mathematics symbolically and audited all three documents, registering
-19 findings, 10 gaps, and 10 risks. All 19 findings are repaired below; the
-gaps are scheduled as work; the risks are owned. The headline repair concerns
-§10: v3's §10.4 decision rule was printed with both branches inverted relative
-to the primary source, and v4 corrects it against C00's own wording (V40).
+technical review (round 1, 18 pp., ingested as the Technical Review concept;
+round 2 added 2026-11-11) re-derived the §10 mathematics symbolically and
+audited all three documents, registering 21 findings, 11 gaps, and 11 risks
+(19/10/10 from round 1 plus E15/E16/G11/R11 from round 2). All 21 findings are
+repaired below; the gaps are scheduled as work; the risks are owned. The
+headline repair concerns §10: v3's §10.4 decision rule was printed with both
+branches inverted relative to the primary source, and v4 corrects it against
+C00's own wording (V40). Round-2 additions are in §§8–9 (parent-pool scope,
+migration policy, I1 cross-island experiment).
 New confirmations are logged as V40–V41 in the ledger. In-graph citations use
 file IDs (A01… G15, E00… E10). v1–v3 are retained.*
 
@@ -388,6 +391,16 @@ have exactly one owner each, and the sync direction is fixed.
 - **Crossover.** Uniform/SBX/BLX-α for thicknesses; biased uniform crossover
   toward the elite parent (BRKGA, **A09**, V17) as the convergence engine;
   VariableLength Trim/Pad alignment for unequal stacks.
+- **Multi-parent parent pool (E16, round 2).** Majority-vote multi-parent
+  crossover draws its k parents from the **post-migration breeding pool of one
+  island** by default: migrants enter the destination pool, then local
+  crossover samples from that pool. Cross-island multi-parent crossover —
+  D13's single-receiver design, where the k parents are sampled from different
+  islands at a migration event — is not the default; it is experiment I1 in
+  §9. This preserves the heterogeneous-island rationale while keeping the
+  D13-style alternative measurable. *(heuristic/design decision; D13
+  Algorithm 1 is the cross-island reference, not evidence that it beats local
+  mating.)*
 - **Mutation.** Gaussian/creep for fine-tuning; Cauchy/Lévy flights for escape —
   the Lévy-flight distribution is textbook per A01 (chunk 1913, V24), with an
   entire F02 subsection on Lévy-flight variants (chunk 6094) and A03's
@@ -419,6 +432,39 @@ Island GAs (**D01** topology, **D06** MapReduce scale, **D13** noise behaviour,
 parallel model: ring or fully connected migration of elites every k
 generations, with *heterogeneous* islands (silica-rich vs thin-absorber vs
 many-layer populations, distinct operators per island) as the advanced form.
+The round-2 amendment fixes the migration policy below.
+
+**Migration policy (E15/R11, round-2 amendment).** "Every k generations" is
+not a policy by itself. Recipe B fixes the minimum below; every value is a
+design decision to be ablated, not a literature constant.
+
+- **Topology.** Ring by default, for heterogeneous and homogeneous islands
+  alike. D01 finds extended rings (Ring+1+2) strongest and fully connected
+  among the weakest for DE; D13 finds ring/torus can beat a single receiver at
+  low noise (though not at scale); `IslandGa` defaults to Ring. Extended rings
+  are the first connectivity upgrade (via a `Custom` topology in Phase 3);
+  fully connected is an ablation, not a default, because its edge count grows
+  quadratically (D01).
+- **Interval.** `k = 10` generations (the `IslandGa` default; 5–20 is the
+  documented typical range); `k` is the compute-budget knob and is ablated over
+  {5, 10, 20, 30}. D06's period 30 is the slow-flow end.
+- **Rate and selection.** One best individual per island per event
+  (`migration_count = 1`, the `IslandGa` default; 1–2 is sufficient, more
+  homogenises), capped at 5% of the population. D06's 5%-of-best setting is
+  the high-rate ablation.
+- **Replacement.** Overwrite the destination's worst individual only if the
+  migrant is better (D01/D13), then run the §7 legality check/repair; never
+  overwrite the destination's best. `IslandGa`'s `BestReplaceWorst` replaces
+  unconditionally, so Phase 2 wraps it with the fitness check and the Phase 3
+  copied skeleton carries the check.
+- **Timing.** After evaluation of generation `k`, before the next breeding
+  cycle.
+- **Parent pool.** Migrants join the destination breeding pool; recombination
+  is within-island by default (E16, §8). I1 is the only cross-island exception.
+
+*(heuristic — design decision grounded in D01/D06/D13 and the `IslandGa`
+defaults; ablate before freezing Phase 2 exits. R11 is owned in E09 v2 §6.)*
+
 Three structural additions resolve the three characteristic conflicts:
 
 - **Age layering** (ALPS pattern; `oxigen`'s age-unfitness) protects young deep
@@ -443,11 +489,27 @@ and GA islands can share one migration channel, trading material assignments
 one way and thickness refinements the other (qualified synthesis, mechanism
 confirmed on both sides).
 
+**I1 — cross-island multi-parent crossover (G11, experiment).** D13's
+single-receiver model samples k parents from different islands at a migration
+event and applies majority-vote crossover; its many-receiver variant does the
+same at several receivers. That is the citable cross-island operator the
+strategy previously left unstated. I1 is **not** a default: at a small fixed
+fraction of migration events (default 10%, ablated), draw k parents from the
+post-migration pools of ≥2 islands and apply majority-vote crossover;
+otherwise breed within-island. Compare against (a) migrate-then-mate-locally,
+(b) within-island multi-parent crossover, and (c) a panmictic single
+population at equal evaluation budget under the fixed-seed statistical
+protocol (E09 v2 §2.7 / review G2). Primary readout: merit and depth at fixed
+budget; secondary: pairwise island distance / material-mix entropy
+(homogenisation) and migration cost. I1 is an island-policy experiment
+alongside D02's adaptive-island-count item, not an H0–H7 arm. *(heuristic;
+D13 Algorithm 1 is the operator reference.)*
+
 ```mermaid
 graph LR
-    I1["island 1: silica-rich"] --> I2["island 2: thin-absorber"]
-    I2 --> I3["island 3: many-layer"]
-    I3 --> I1
+    ISL1["island 1: silica-rich"] --> ISL2["island 2: thin-absorber"]
+    ISL2 --> ISL3["island 3: many-layer"]
+    ISL3 --> ISL1
 ```
 
 ## 10. The needle method: grower, prover, macromutation
@@ -938,8 +1000,11 @@ practice suggests, and what the next round of work must build.
   **G10** crystal illumination · **G11** differentiable QD (CMA-ME gradient) ·
   **G12** unsupervised QD · **G13** unbounded MOQD · **G14** QD-guided diffusion ·
   **G15** high-dim QD (CMA-MAE)
-- **Review** independent technical review of PAPER v3 + E09 + E10 (19 findings,
-  10 gaps, 10 risks; findings register §4, Appendix A symbolic verification)
+- **Review** independent technical review of PAPER v3 + E09 + E10 — round 1
+  (19 findings, 10 gaps, 10 risks) plus round 2 (E15/E16 migration policy and
+  parent-pool scope, G11 cross-island recombination, R11 island-policy risk);
+  total 21 findings, 11 gaps, 11 risks. Findings register §4; round-2 repair in
+  §§8–9; Appendix A symbolic verification.
 
 ## Appendix A. Re-derivation record (review M1–M4)
 
