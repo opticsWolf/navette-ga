@@ -26,7 +26,7 @@ use navette::smatrix::synthesis::pipeline::SpectralInputs;
 use navette::smatrix::synthesis::staged::{PolishReport, PolishScope};
 use navette::smatrix::synthesis::structure::{ClampReport, DesignStack, EdgeMaterials, LayerSpec};
 
-use crate::decoder::DecodedStack;
+use crate::decoder::{DecodedStack, MaterialPool as DecoderPool, Pins};
 
 /// A material-boundary contract for a stack template.
 ///
@@ -175,6 +175,40 @@ impl StackTemplate {
         )
     }
 
+    /// Turn single-material edge lists into decoder pins, so a GA starts with
+    /// compliant edges. A list naming several materials cannot be pinned; that
+    /// edge returns `None` and is still validated by [`Self::assemble`].
+    pub fn edge_pins(&self, decoder: &DecoderPool) -> Result<Pins, String> {
+        let resolve = |list: &Option<Vec<String>>, which: &str| -> Result<Option<usize>, String> {
+            let Some(list) = list else {
+                return Ok(None);
+            };
+            if list.len() != 1 {
+                return Ok(None);
+            }
+            let name = &list[0];
+            let mut hits = decoder
+                .materials()
+                .iter()
+                .enumerate()
+                .filter(|(_, material)| material.name() == name)
+                .map(|(index, _)| index);
+            match (hits.next(), hits.next()) {
+                (Some(index), None) => Ok(Some(index)),
+                (None, _) => Err(format!(
+                    "edge pins: the {which} list names {name:?}, which is not a decoder material"
+                )),
+                (Some(_), Some(_)) => Err(format!(
+                    "edge pins: the decoder has more than one material named {name:?}; names must be unique"
+                )),
+            }
+        };
+        Ok(Pins::with_edges(
+            resolve(&self.boundary.outer, "outer")?,
+            resolve(&self.boundary.inner, "inner")?,
+        ))
+    }
+
     /// Build a navette stack from decoded layers.
     pub fn assemble(&self, decoded: &DecodedStack) -> Result<DesignStack, String> {
         let mut films = Vec::with_capacity(decoded.len());
@@ -192,9 +226,11 @@ impl StackTemplate {
             film.d_nm = layer.thickness_nm;
             film.optimize = film.optimize && !layer.pinned;
             film.needle = film.needle && !layer.pinned;
-            if film.label.is_none() {
-                film.label = Some(Arc::from(film.material.as_ref()));
-            }
+            // The template material is a pool entry; its `material` is the
+            // label insert/edge rules resolve. Keep the assembled film on that
+            // label even if the template carried a custom display label, so a
+            // host never falls back to ambiguous index matching.
+            film.label = Some(Arc::from(film.material.as_ref()));
             films.push(film);
         }
         let mut stack =
@@ -637,6 +673,9 @@ mod tests {
             Material::new("L", 10.0, 200.0).unwrap(),
         ])
         .unwrap();
+        let pins = template.edge_pins(&decoder_pool).unwrap();
+        assert_eq!(pins.outer, Some(0));
+        assert_eq!(pins.inner, Some(1));
         let decoder = Decoder::without_constraints(decoder_pool).unwrap();
         let good = decoder
             .decode(&Genome::from(vec![

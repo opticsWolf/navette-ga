@@ -197,9 +197,12 @@ re-invent.
 every label and rejects empty edge lists. `assemble` sets the edge materials
 and errors when the decoded first/last films are not on their lists;
 `needle_pool` applies the host→needle matrix, and
-`MemeticOperator::from_template` uses that pool. No second insert matrix is
-stored. Tests cover unknown/empty labels, assembled-edge compliance, and a
-memetic scan restricted to the allowed needle material.
+`MemeticOperator::from_template` uses that pool. A single-material edge list
+can also become decoder `Pins` through `edge_pins`; multi-material lists stay
+validation-only pending the Phase 2 seed-or-pin choice. No second insert
+matrix is stored. Tests cover unknown/empty labels, assembled-edge compliance,
+edge-to-pin mapping, and a memetic scan restricted to the allowed needle
+material.
 
 The remaining investigation has five parts:
 
