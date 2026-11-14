@@ -201,15 +201,46 @@ Island-policy experiment I1 (review G11, round 2): cross-island multi-parent
 crossover is registered separately from H0–H7 and follows the same fixed-seed
 protocol; it reports merit/depth at fixed budget plus a homogenisation metric
 (pairwise island distance / material-mix entropy). The default remains
-migrate-then-mate-locally; PAPER v4 §9 fixes the migration policy.
+migrate-then-mate-locally; §2.8.1 fixes the migration policy.
 
-**2.8 Recipe mapping.** Recipe A: G1+G2+G3(rung 2) + single island +
-terminal navette needle + LM. Recipe B: full stack — seeding (S8 proposals via
-enqueue, mined-motif fallback armed), S5 rung 3, S3 heterogeneous
-islands/tribes under PAPER v4 §9's migration policy (ring, k=10, one best
-migrant, best-replace-worst-if-better), S2 via G4, S4 archive throughout, S6
-moors split, S7 screening past TMM, S10 registration. I1 (cross-island
-multi-parent) is an experiment on top, not part of the default stack.
+**2.8 Recipe mapping and island policy.** Recipe A: G1+G2+G3(rung 2) + single
+island + terminal navette needle + LM. Recipe B: full stack — seeding (S8
+proposals via enqueue, mined-motif fallback armed), S5 rung 3, S3 heterogeneous
+islands/tribes under the §2.8.1 island policy, S2 via G4, S4 archive
+throughout, S6 moors split, S7 screening past TMM, S10 registration. I1
+(cross-island multi-parent) is an experiment on top, not part of the default
+stack.
+
+**2.8.1 Round-2 island policy (E15/R11; mirrors PAPER v4 §9).** "Every k
+generations" is not a policy. Recipe B fixes the minimum below; every value is
+a heuristic design decision to be ablated, not a literature constant.
+
+| Knob | Default | Evidence / rationale |
+|---|---|---|
+| Topology | Ring; extended ring (`Ring+1+2`) is the first connectivity upgrade via `Custom` in Phase 3; fully connected is an ablation | D01: extended rings strongest, fully connected among the weakest for DE; D13: ring/torus can beat a single receiver at low noise (not at scale); `IslandGa` defaults to Ring |
+| Interval | `k = 10`; ablate {5, 10, 20, 30} | `IslandGa` default 10; its docs give 5–20 as typical; D06's period 30 is the slow-flow end |
+| Rate and selection | One best individual per island per event (`migration_count = 1`), capped at 5% of P | `IslandGa` default 1; its docs say 1–2 is sufficient and more homogenises; D06's 5%-of-best is the high-rate ablation |
+| Replacement | Overwrite the destination's worst only if the migrant is better; then §7 legality repair; never overwrite the destination's best | D01: incoming replace worst "provided that they were better"; D13: replace only if fitter. `IslandGa`'s `BestReplaceWorst` is unconditional, so Phase 2 wraps it and the Phase 3 copy adds the check |
+| Timing | After evaluation of generation k, before the next breeding cycle | `IslandGa` migration cycle |
+| Parent pool | Migrants join the destination pool; recombination is within-island by default (E16) | I1 is the only cross-island exception |
+
+**2.8.2 Evidence and implementation.** Verified against `research/kb.db`
+(2026-11-14): `D01` defines the migration topology/rate/frequency parameters
+and uses elitist "best replace worst if better"; `D06` uses a ring, period 30,
+5% best migrants; `D13`'s single-receiver model samples k parents from
+different islands at a migration event (the I1 reference) and replaces only if
+fitter; `D02` keeps adaptive island counts as an experiment. The dependency
+source `vendor/sources/genetic_algorithms/src/engines/island/` confirms the
+`IslandGa` defaults (4 islands, interval 10, count 1, Ring,
+BestReplaceWorst); `migration.rs::replace_worst` replaces unconditionally, so
+the Phase 2 wrapper and Phase 3 copy add the fitness check. Phase 2 uses the
+dependency plus wrapper; Phase 3's copied skeleton carries the check natively.
+I1 is implemented only after the baseline policy and H0 control are measured,
+and is reported separately from H0–H7.
+
+Ablations before freezing Phase 2 exits: I1 vs migrate-then-mate-locally on
+merit/depth and homogenisation; migration rate 1 / 2 / 5%; plain ring vs
+extended ring; fully connected only as the low-diameter ablation.
 
 **2.9 Navette amendments (A1–A6, owner-implemented)**
 
@@ -307,7 +338,7 @@ stands on E00 picks.
   d_min-stable (review C2; discrete scope stated, P(z)≈0 reserved for
   post-A6 campaigns). Exit: fabricated-plausible stack + ledger entry.
 - **Phase 2 — Recipe B core (month):** heterogeneous islands/tribes under the
-  PAPER v4 §9 migration policy (ring, k=10, one best migrant,
+  §2.8.1 island policy (ring, k=10, one best migrant,
   best-replace-worst-if-better with legality repair), G4(a) needle-memetic,
   dynamic parsimony, moors split (S6), rung-3 pool, H0 control arm running in
   parallel (review G1/R6: if the control wins at equal compute, S2–S4 narrow
@@ -353,7 +384,7 @@ stands on E00 picks.
 10. **Scale claims past the teaching example (R10, low):** v4 §1 scopes them
     as hypothesis (work item 6: catalogue witness or narrow the claim).
 11. **Island policy homogenises or starves heterogeneous islands (R11,
-    low–medium):** PAPER v4 §9 fixes ring topology, k=10, one best migrant,
+    low–medium):** §2.8.1 fixes ring topology, k=10, one best migrant,
     best-replace-worst-if-better, and within-island mating. Validate against a
     single-island ablation and I1 under the §2.7 protocol; if pairwise island
     distance collapses, raise k or lower the migration rate before adding
