@@ -9,6 +9,7 @@
 //! | [`decoder`] | G2/G3 | variable-length keys, material pool, bounds, pins, grammar |
 //! | [`bridge`] | G1/G4 | genome → navette [`DesignStack`] → merit, boundary rules, needle-memetic operator |
 //! | [`engines`] | S1–S3 | Recipe A GA, island/tribe backbone, VL operators |
+//! | [`materials`] | G3 | navette material library → decoder pool + stack template |
 //! | [`qd`] | S4/F1 | MAP-Elites / CVT archive glue, MOME per-bin fronts |
 //! | [`study`] | G7 | blackopt/optimizer study wiring |
 //! | `bench` | G8/G9 | kurobako problems and performance harness (feature `bench`) |
@@ -23,6 +24,7 @@
 pub mod bridge;
 pub mod decoder;
 pub mod engines;
+pub mod materials;
 pub mod qd;
 pub mod study;
 
