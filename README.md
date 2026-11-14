@@ -18,8 +18,9 @@ scan+insert+polish. A1/A3 live on the local Navette `dev_ga` checkout. The
 bridge now carries navette's insert and edge-list boundary rules, maps
 single-material edges to decoder pins, and checks insert pairs against the
 adjacency grammar (E09 v2 §2.4.1 Phase 1), and verifies flat boundary needles
-against host and edge rules. Joint boundary needles, the seed-or-pin decision,
-the `"*"`/multi-material edge cases, A2/A4, and the Phase 2 island driver
+against host and edge rules; single-material edges become pins, multi-material
+edges validate at assembly, and seeding is rejected. Joint boundary needles,
+joint gaps, multi-material edge checks, A2/A4, and the Phase 2 island driver
 remain. Publishing waits for a navette release containing A1/A3. The
 specification of record is
 [`E09_rust_implementation_strategy_v2.md`](docs/strategy/E09_rust_implementation_strategy_v2.md)

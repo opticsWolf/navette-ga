@@ -32,8 +32,8 @@ use crate::decoder::{AdjacencyGrammar, DecodedStack, MaterialPool as DecoderPool
 ///
 /// Reuses navette's `InsertRules` (host label -> accepted needle labels) and
 /// its outer/inner edge lists. `seed_edges` is deliberately absent: it inserts
-/// a film and changes the decoded layer count, so the seed-or-pin decision is
-/// Phase 2 of E09 v2 §2.4.1.
+/// a film and changes the decoded layer count, so this bridge uses decoder pins
+/// for single-material edge lists and assembly-time validation for the rest.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BoundaryRules {
     /// Host label -> the labels of needles it accepts. `None`: unrestricted.
@@ -73,6 +73,16 @@ impl BoundaryRules {
     pub fn validate(&self, materials: &[LayerSpec]) -> Result<(), String> {
         if self.is_free() {
             return Ok(());
+        }
+        if self
+            .insert
+            .as_ref()
+            .is_some_and(|rules| rules.contains_key("*"))
+        {
+            return Err(
+                "boundary rules: the \"*\" host is not supported by StackTemplate;                  name each host material explicitly"
+                    .into(),
+            );
         }
         for (which, list) in [("outer", &self.outer), ("inner", &self.inner)] {
             if list.as_ref().is_some_and(|l| l.is_empty()) {
@@ -243,9 +253,6 @@ impl StackTemplate {
             }
         };
         for (host, needles) in rules {
-            if host == "*" {
-                continue;
-            }
             let h = lookup(host, "host")?;
             for needle in needles {
                 let n = lookup(needle, "needle")?;
@@ -686,6 +693,45 @@ mod tests {
             ..navette::smatrix::synthesis::cycle::NeedleRules::default()
         };
         assert!(BoundaryRules::from_needle_rules(seeded).is_err());
+
+        let wildcard = BoundaryRules {
+            insert: Some(
+                [("*".to_string(), vec!["L".to_string()])]
+                    .into_iter()
+                    .collect(),
+            ),
+            ..BoundaryRules::default()
+        };
+        assert!(template().with_boundary_rules(wildcard).is_err());
+    }
+
+    #[test]
+    fn multi_material_edges_are_validated_not_pinned() {
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0, 1),
+            constant("substrate", 1.52, 0.0, 1),
+            vec![
+                constant("H", 2.2, 0.0, 1),
+                constant("L", 1.46, 0.0, 1),
+                constant("G", 1.8, 0.0, 1),
+            ],
+        )
+        .unwrap()
+        .with_boundary_rules(BoundaryRules {
+            outer: Some(vec!["H".to_string(), "G".to_string()]),
+            inner: Some(vec!["L".to_string()]),
+            ..BoundaryRules::default()
+        })
+        .unwrap();
+        let decoder_pool = MaterialPool::new(vec![
+            Material::new("H", 20.0, 300.0).unwrap(),
+            Material::new("L", 10.0, 200.0).unwrap(),
+            Material::new("G", 15.0, 250.0).unwrap(),
+        ])
+        .unwrap();
+        let pins = template.edge_pins(&decoder_pool).unwrap();
+        assert_eq!(pins.outer, None, "a two-material list cannot be pinned");
+        assert_eq!(pins.inner, Some(1));
     }
 
     #[test]

@@ -22,9 +22,9 @@ crate claims ("only X does Y") mean "among surveyed crates", not the world.*
   assembled stacks validate their edges and the memetic pool honors the insert
   matrix; single-material edge lists can become decoder pins, and insert pairs
   are checked for bidirectional grammar legality; the flat boundary needle is
-  covered, including edge-list rejection. Phase 2 still decides seed-or-pin,
-  joint boundary needles, and the `"*"`/multi-material edge cases (E09 v2
-  §2.4.1). It is a data contract, not a second adjacency grammar.
+  covered, including edge-list rejection. Pins are used for single-material
+  edges and seeding is rejected; Phase 2 still covers joint boundary needles,
+  joint gaps, and multi-material edges (E09 v2 §2.4.1). It is a data contract, not a second adjacency grammar.
 - **Review status:** 21 findings / 11 gaps / 11 risks (round 1: 19/10/10; round 2 adds
   E15/E16/G11/R11). S1–S10 remain the strategy spine; certification is the C2
   scan certificate (P(z)≈0 is A6-only), and S3's migration policy is fixed in
