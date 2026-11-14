@@ -677,7 +677,7 @@ mod tests {
         DesignRequest, LayerRow, MaterialDef, StructureCfg, TabData,
     };
     use navette::smatrix::synthesis::environments::{
-        build_environments, DesignSegmentCfg, EnvSegmentCfg, EnvironmentCfg,
+        build_environments, DesignSegmentCfg, EnvSegmentCfg, EnvironmentCfg, FixedLayerRow,
     };
     use navette::smatrix::synthesis::merit::{
         ConstraintKind, CurveId, MeritKey, MeritTarget, SimTransform,
@@ -826,6 +826,42 @@ mod tests {
         }
     }
 
+    fn joint_fixed_row(code: &str, d_nm: f64) -> FixedLayerRow {
+        FixedLayerRow {
+            material_code: code.to_string(),
+            thickness_nm: d_nm,
+            coherent: true,
+            roughness_nm: 0.0,
+            rough_type: 0,
+            inhomogen: false,
+            inh_delta: 0.1,
+            interface: false,
+            interface_thickness_nm: 0.0,
+            optimize: false,
+            needle: false,
+            layer_type: 1,
+            gradient: None,
+        }
+    }
+
+    fn joint_design_segment() -> EnvSegmentCfg {
+        EnvSegmentCfg {
+            layers: None,
+            design: Some("coat".to_string()),
+            repeat: None,
+            inverted: false,
+        }
+    }
+
+    fn joint_fixed_segment(code: &str, d_nm: f64) -> EnvSegmentCfg {
+        EnvSegmentCfg {
+            layers: Some(vec![joint_fixed_row(code, d_nm)]),
+            design: None,
+            repeat: None,
+            inverted: false,
+        }
+    }
+
     #[test]
     fn joint_gap_accepts_checks_environments_and_edge_lists() {
         let insert: InsertRules = [
@@ -864,24 +900,24 @@ mod tests {
             )]
             .into_iter()
             .collect(),
-            environments: ["front", "back"]
-                .into_iter()
-                .map(|name| EnvironmentCfg {
-                    name: name.to_string(),
-                    stack: vec![EnvSegmentCfg {
-                        layers: None,
-                        design: Some("coat".to_string()),
-                        repeat: None,
-                        inverted: false,
-                    }],
-                })
-                .collect(),
+            environments: vec![
+                EnvironmentCfg {
+                    name: "front".to_string(),
+                    stack: vec![joint_design_segment()],
+                },
+                EnvironmentCfg {
+                    name: "back".to_string(),
+                    stack: vec![joint_fixed_segment("H", 300.0), joint_design_segment()],
+                },
+            ],
         };
         let (mut envs, pool, warnings) = build_environments(&request, &[550.0]).unwrap();
         assert!(warnings.is_empty(), "{warnings:?}");
         assert_eq!(envs.n_envs(), 2);
         let stacks = envs.expand(&envs.stacks()[0]).unwrap();
         assert_eq!(stacks.len(), 2);
+        assert_eq!(stacks[0].films().len(), 2);
+        assert_eq!(stacks[1].films().len(), 3);
         let g = pool
             .iter()
             .position(|entry| entry.material.as_ref() == "G")
@@ -933,10 +969,11 @@ mod tests {
         )
         .unwrap();
         assert_eq!(slot, 0);
-        for stack in &inserted {
-            assert_eq!(stack.films()[0].material.as_ref(), "G");
-            assert_eq!(stack.films()[0].d_nm, 15.0);
-        }
+        assert_eq!(inserted[0].films()[0].material.as_ref(), "G");
+        assert_eq!(inserted[0].films()[0].d_nm, 15.0);
+        assert_eq!(inserted[1].films()[0].d_nm, 300.0);
+        assert_eq!(inserted[1].films()[1].material.as_ref(), "G");
+        assert_eq!(inserted[1].films()[1].d_nm, 15.0);
 
         let after: Vec<Vec<f64>> = stacks
             .iter()
@@ -965,11 +1002,12 @@ mod tests {
             joint_gap_insert(&mut envs, &mut design, &pool, insertion_gap, g, 25.0).unwrap();
         assert_eq!(slot, 1);
         assert_eq!(inserted.len(), 2);
-        for stack in &inserted {
-            assert_eq!(stack.films().len(), 3);
-            assert_eq!(stack.films()[1].d_nm, 25.0);
-            assert_eq!(stack.films()[1].material.as_ref(), "G");
-        }
+        assert_eq!(inserted[0].films().len(), 3);
+        assert_eq!(inserted[0].films()[1].d_nm, 25.0);
+        assert_eq!(inserted[0].films()[1].material.as_ref(), "G");
+        assert_eq!(inserted[1].films().len(), 4);
+        assert_eq!(inserted[1].films()[2].d_nm, 25.0);
+        assert_eq!(inserted[1].films()[2].material.as_ref(), "G");
         assert!(!joint_gap_accepts(&envs, &inserted, &pool, insertion_gap, g).unwrap());
     }
 

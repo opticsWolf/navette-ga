@@ -247,8 +247,9 @@ The remaining investigation has five parts:
    it and rejected when the edge list excludes it. The joint path now has a
    read-only public door, `MaterialPool::gap_accepts_needle`, and the
    `navette-ga` bridge exposes `joint_gap_accepts`; a two-environment test
-   checks host/edge acceptance at the top, interior, and bottom loci and
-   asserts that the query moves no film. `joint_gap_sites` enumerates every
+   with one bare coat and one behind a fixed 300 nm cover (so the same locus
+   occupies different rows) checks host/edge acceptance at the top, interior,
+   and bottom loci and asserts that the query moves no film. `joint_gap_sites` enumerates every
    accepted (locus, pool entry) pair without a spectral gain estimate;
    `joint_gap_insert` gates a chosen needle through the same door and inserts
    it transactionally into every environment, extending the routing table.
