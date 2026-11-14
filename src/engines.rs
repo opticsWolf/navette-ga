@@ -30,7 +30,7 @@ use genetic_algorithms::traits::{
 use rand::Rng;
 
 use crate::bridge::{FitnessEvaluator, MemeticOperator, StackTemplate};
-use crate::decoder::{DecodedStack, Decoder, Genome, LayerGene};
+use crate::decoder::{AdjacencyGrammar, DecodedStack, Decoder, Genome, LayerGene};
 
 /// One gene: the three random keys of one layer.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -361,6 +361,27 @@ pub struct HeterogeneousIslandConfig {
     pub strategies: Vec<IslandStrategy>,
 }
 
+/// One island's decoder regime.
+///
+/// The pool, pins, and chromosome width stay shared; this narrows presence
+/// and adjacency legality for an island. `None` leaves the base decoder's
+/// value in place. Migrants are re-evaluated by the destination's next
+/// `Ga` advance, so a genome legal in one tribe is not credited with the
+/// source tribe's fitness.
+#[derive(Clone, Debug, Default)]
+pub struct TribeConstraint {
+    pub presence_threshold: Option<f64>,
+    pub grammar: Option<AdjacencyGrammar>,
+}
+
+/// Ring policy plus per-island operator and decoder regimes.
+#[derive(Clone, Debug)]
+pub struct HeterogeneousTribeConfig {
+    pub islands: IslandRecipeConfig,
+    pub strategies: Vec<IslandStrategy>,
+    pub constraints: Vec<TribeConstraint>,
+}
+
 /// Best design plus the policy bookkeeping from an island run.
 #[derive(Clone, Debug)]
 pub struct IslandRecipeResult {
@@ -558,10 +579,14 @@ fn run_recipe_a_islands_with_strategies(
     cfg: &RecipeAConfig,
     islands: &IslandRecipeConfig,
     strategies: Option<&[IslandStrategy]>,
+    constraints: Option<&[TribeConstraint]>,
 ) -> Result<IslandRecipeResult, String> {
     validate_recipe_a(cfg)?;
     if let Some(strategies) = strategies {
         validate_island_strategies(strategies, islands.islands)?;
+    }
+    if let Some(constraints) = constraints {
+        validate_tribe_constraints(constraints, islands.islands, decoder.pool().len())?;
     }
     if islands.islands < 2 {
         return Err("island Recipe A needs at least two islands".into());
@@ -596,9 +621,13 @@ fn run_recipe_a_islands_with_strategies(
                 )
             });
             let strategy = strategies.map(|all| &all[island]);
+            let island_decoder = match constraints {
+                Some(all) => tribe_decoder(decoder, &all[island])?,
+                None => decoder.clone(),
+            };
             let mut ga = build_recipe_a_ga(
                 cfg,
-                decoder,
+                &island_decoder,
                 template,
                 evaluator,
                 Some(population.clone()),
@@ -805,6 +834,71 @@ fn validate_island_strategies(strategies: &[IslandStrategy], islands: usize) -> 
     Ok(())
 }
 
+fn validate_tribe_constraints(
+    constraints: &[TribeConstraint],
+    islands: usize,
+    pool_len: usize,
+) -> Result<(), String> {
+    if constraints.len() != islands {
+        return Err(format!(
+            "tribes: {} constraint entries for {islands} islands",
+            constraints.len()
+        ));
+    }
+    for (index, constraint) in constraints.iter().enumerate() {
+        if let Some(threshold) = constraint.presence_threshold {
+            if !threshold.is_finite() || !(0.0..=1.0).contains(&threshold) {
+                return Err(format!(
+                    "tribes: island {index} presence_threshold must be in [0, 1]"
+                ));
+            }
+        }
+        if let Some(grammar) = &constraint.grammar {
+            if grammar.len() != pool_len {
+                return Err(format!(
+                    "tribes: island {index} grammar covers {} materials, the decoder pool has {pool_len}",
+                    grammar.len()
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn tribe_decoder(base: &Decoder, constraint: &TribeConstraint) -> Result<Decoder, String> {
+    let mut decoder = base.clone();
+    if let Some(threshold) = constraint.presence_threshold {
+        decoder = decoder
+            .with_presence_threshold(threshold)
+            .map_err(|error| error.to_string())?;
+    }
+    if let Some(grammar) = &constraint.grammar {
+        decoder = decoder
+            .with_grammar(grammar.clone())
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(decoder)
+}
+
+/// Run Recipe A on the ring with per-island operator and decoder regimes.
+pub fn run_recipe_a_tribes(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    cfg: &RecipeAConfig,
+    tribes: &HeterogeneousTribeConfig,
+) -> Result<IslandRecipeResult, String> {
+    run_recipe_a_islands_with_strategies(
+        decoder,
+        template,
+        evaluator,
+        cfg,
+        &tribes.islands,
+        Some(&tribes.strategies),
+        Some(&tribes.constraints),
+    )
+}
+
 /// Run Recipe A on the ring with one operator regime per island.
 pub fn run_recipe_a_islands(
     decoder: &Decoder,
@@ -813,7 +907,7 @@ pub fn run_recipe_a_islands(
     cfg: &RecipeAConfig,
     islands: &IslandRecipeConfig,
 ) -> Result<IslandRecipeResult, String> {
-    run_recipe_a_islands_with_strategies(decoder, template, evaluator, cfg, islands, None)
+    run_recipe_a_islands_with_strategies(decoder, template, evaluator, cfg, islands, None, None)
 }
 
 /// Run Recipe A on the ring with a per-island mutation/selection strategy.
@@ -832,6 +926,7 @@ pub fn run_recipe_a_heterogeneous_islands(
         cfg,
         &heterogeneous.islands,
         Some(&heterogeneous.strategies),
+        None,
     )
 }
 
@@ -1636,6 +1731,74 @@ mod tests {
         assert_eq!(result.island_bests.len(), 2);
         assert_eq!(result.migrations, cfg.generations * 2);
         assert!(result.best.merit.is_finite());
+    }
+
+    #[test]
+    fn tribe_recipe_a_runs_with_per_island_constraints() {
+        let pool = MaterialPool::new(vec![
+            Material::new("H", 20.0, 200.0).unwrap(),
+            Material::new("L", 10.0, 150.0).unwrap(),
+        ])
+        .unwrap();
+        let decoder = Decoder::without_constraints(pool).unwrap();
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0),
+            constant("substrate", 1.52, 0.0),
+            vec![constant("H", 2.2, 0.0), constant("L", 1.46, 0.0)],
+        )
+        .unwrap();
+        let evaluator = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            zero_spec(),
+            EvaluatorOptions::default(),
+        )
+        .unwrap();
+        let cfg = RecipeAConfig {
+            population_size: 6,
+            generations: 2,
+            max_layers: 4,
+            mutation_sigma: 0.2,
+            seed: Some(91),
+        };
+        let tribes = HeterogeneousTribeConfig {
+            islands: IslandRecipeConfig {
+                islands: 2,
+                migration_interval: 1,
+                migration_count: 1,
+            },
+            strategies: vec![
+                IslandStrategy {
+                    mutation_sigma: 0.1,
+                    selection: Selection::Tournament,
+                },
+                IslandStrategy {
+                    mutation_sigma: 0.4,
+                    selection: Selection::Rank,
+                },
+            ],
+            constraints: vec![
+                TribeConstraint {
+                    presence_threshold: Some(0.2),
+                    grammar: None,
+                },
+                TribeConstraint {
+                    presence_threshold: Some(0.9),
+                    grammar: Some(AdjacencyGrammar::all_allowed(2)),
+                },
+            ],
+        };
+        let result = run_recipe_a_tribes(&decoder, &template, &evaluator, &cfg, &tribes).unwrap();
+
+        assert_eq!(result.island_bests.len(), 2);
+        assert_eq!(result.migrations, cfg.generations * tribes.islands.islands);
+        assert!(result.best.merit.is_finite());
+        assert!((1..=cfg.max_layers).contains(&result.best.decoded.len()));
+
+        let strict = tribe_decoder(&decoder, &tribes.constraints[1]).unwrap();
+        let genome = Genome::from(vec![LayerGene::new(0.5, 0.5, 0.5)]);
+        assert_eq!(decoder.decode(&genome).unwrap().len(), 1);
+        assert_eq!(strict.decode(&genome).unwrap().len(), 0);
     }
 
     #[test]

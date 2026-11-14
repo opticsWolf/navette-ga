@@ -28,8 +28,8 @@ driver is in place (`run_recipe_a_islands`: ring, one best migrant capped at
 5%, best-replace-worst-if-better). Read-only joint gap acceptance, structural
 candidate enumeration, and transactional chosen-locus insertion are exposed
 through `joint_gap_accepts` / `joint_gap_sites` / `joint_gap_insert`; a spectral
-joint scan/polish run, multi-material joint checks, constraint-regime tribes,
-and A2/A4 remain.
+joint scan/polish run, multi-material joint checks, VL tribe constraints, and
+A2/A4 remain.
 Publishing waits for a navette release containing A1/A3. The specification of
 record is
 [`E09_rust_implementation_strategy_v2.md`](docs/strategy/E09_rust_implementation_strategy_v2.md)

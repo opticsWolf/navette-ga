@@ -535,6 +535,21 @@ impl Decoder {
         self
     }
 
+    /// Replace the adjacency grammar. The grammar must name exactly the
+    /// decoder's pool entries; a different size is refused.
+    pub fn with_grammar(mut self, grammar: AdjacencyGrammar) -> Result<Self, DecodeError> {
+        if grammar.len() != self.pool.len() {
+            return Err(DecodeError::GrammarShape {
+                materials: self.pool.len(),
+                rows: grammar.len(),
+                row: 0,
+                cols: grammar.len(),
+            });
+        }
+        self.grammar = grammar;
+        Ok(self)
+    }
+
     pub fn with_presence_threshold(mut self, threshold: f64) -> Result<Self, DecodeError> {
         if !threshold.is_finite() || !(0.0..=1.0).contains(&threshold) {
             return Err(DecodeError::InvalidPresenceThreshold { value: threshold });
