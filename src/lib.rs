@@ -7,8 +7,8 @@
 //! | Module | Strategy item | Role |
 //! |---|---|---|
 //! | [`decoder`] | G2/G3 | variable-length keys, material pool, bounds, pins, grammar |
-//! | [`bridge`] | G1/G4 | genome → navette [`DesignStack`] → merit, needle-memetic operator |
-//! | [`engines`] | S1–S3 | island/tribe GA, VL operators, assembly backbone |
+//! | [`bridge`] | G1/G4 | genome → navette [`DesignStack`] → merit, boundary rules, needle-memetic operator |
+//! | [`engines`] | S1–S3 | Recipe A GA, island/tribe backbone, VL operators |
 //! | [`qd`] | S4/F1 | MAP-Elites / CVT archive glue, MOME per-bin fronts |
 //! | [`study`] | G7 | blackopt/optimizer study wiring |
 //! | `bench` | G8/G9 | kurobako problems and performance harness (feature `bench`) |

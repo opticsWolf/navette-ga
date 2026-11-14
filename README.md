@@ -14,11 +14,13 @@ implemented and tested. The GA runs `genetic_algorithms` over three random
 keys per layer, decodes with presence-coded variable length, assembles a
 navette `DesignStack`, and minimizes joint merit. Closed-form quarter-wave and
 V-coat checks pass, and the G9 micro-bench covers evaluate, LM, A1 scan, and
-scan+insert+polish. A1/A3 live on the local Navette `dev_ga` checkout. The bridge now carries
-navette's insert and edge-list boundary rules (E09 v2 §2.4.1 Phase 1);
-boundary needles, the seed-or-pin decision, the grammar truth table, A2/A4,
-and the Phase 2 island driver remain. Publishing waits for a navette release
-containing A1/A3. The specification of record is
+scan+insert+polish. A1/A3 live on the local Navette `dev_ga` checkout. The
+bridge now carries navette's insert and edge-list boundary rules, maps
+single-material edges to decoder pins, and checks insert pairs against the
+adjacency grammar (E09 v2 §2.4.1 Phase 1). Boundary needles, the seed-or-pin
+decision, the `"*"`/multi-material edge cases, A2/A4, and the Phase 2 island
+driver remain. Publishing waits for a navette release containing A1/A3. The
+specification of record is
 [`E09_rust_implementation_strategy_v2.md`](docs/strategy/E09_rust_implementation_strategy_v2.md)
 and [`E10_cherrypick_reassembly_v2.md`](docs/strategy/E10_cherrypick_reassembly_v2.md).
 
@@ -35,7 +37,7 @@ CREDIT.md                  # provenance ledger (copied code only)
 src/
   lib.rs                   # crate docs + module map
   decoder.rs               # G2/G3: VL keys, material pool, bounds, pins, grammar
-  bridge.rs                # G1/G4: fitness bridge + needle-memetic operator
+  bridge.rs                # G1/G4: fitness bridge, boundary rules, needle-memetic operator
   engines.rs               # S1-S3: Recipe A GA + island/tribe backbone
   qd.rs                    # S4/F1: MAP-Elites / MOME archive glue
   study.rs                 # G7: blackopt/optimizer study wiring
