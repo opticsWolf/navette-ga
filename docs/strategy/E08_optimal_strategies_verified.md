@@ -162,8 +162,8 @@ descriptors, LLM operator, archive glue (E06 §12).
    — first code in the new crate.
 6. **Round-2 island policy (E15/R11):** ablate migration rate (1/2/5%), plain vs
    extended ring, and I1 cross-island multi-parent vs within-island mating; report
-   merit/depth plus homogenisation. Implement the policy in the Phase 2 wrapper and
-   the Phase 3 copy.
+   merit/depth plus homogenisation. The Phase 2 wrapper is implemented
+   (`run_recipe_a_islands`); the Phase 3 copy remains.
 
 *Method note: V1–V15 verdicts from `okf search --target chunks` (4 + 4 + 4 query
 batches), 2026-11-09; full chunk texts in the cited concepts. PAPER v4's V16–V41 and

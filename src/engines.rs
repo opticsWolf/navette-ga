@@ -5,8 +5,8 @@
 //! a fixed-width chromosome of three random keys per layer, decoded by
 //! [`crate::decoder`] and evaluated by [`crate::bridge`]. Presence keys make
 //! the decoded stack variable-length even though the engine's DNA is fixed
-//! width; insertion/deletion mutation and the island driver follow in the
-//! Phase 2/3 work.
+//! width. The Phase 2 island driver runs a ring with best-replace-worst-if-better
+//! migration; true variable-length insertion/deletion mutation follows.
 //!
 //! The `genevo` 0.7 Simulation/Operator/Population traits are adopted when
 //! the E09 v2 §1.1 copy gate opens. Both copies are Apache-2.0 /
@@ -19,7 +19,8 @@ use genetic_algorithms::configuration::ProblemSolving;
 use genetic_algorithms::fitness::FitnessFnWrapper;
 use genetic_algorithms::ga::Ga;
 use genetic_algorithms::operations::{Crossover, GaussianParams, Mutation, Selection, Survivor};
-use genetic_algorithms::rng::make_rng;
+use genetic_algorithms::population::Population;
+use genetic_algorithms::rng::{make_rng, set_seed};
 use genetic_algorithms::traits::{
     ChromosomeT, ConfigurationT, CrossoverConfig, GeneT, LinearChromosome, MutationConfig,
     OperatorCompat, RealValuedMutation, SelectionConfig, StoppingConfig,
@@ -220,6 +221,32 @@ impl Default for RecipeAConfig {
     }
 }
 
+/// Phase 2 island policy for Recipe A.
+///
+/// The loop runs every island independently, then a ring migration every
+/// `migration_interval` generations: each island sends its best to its
+/// successor and replaces the successor's worst only when the migrant is
+/// strictly better. `migration_count` is capped at 5% of the population (at
+/// least one), matching E09 v2 §2.8.1. No extra legality repair is needed on
+/// this fixed-width chromosome: every island shares the decoder grammar and
+/// pins, so a legal migrant stays legal in the destination.
+#[derive(Clone, Debug)]
+pub struct IslandRecipeConfig {
+    pub islands: usize,
+    pub migration_interval: usize,
+    pub migration_count: usize,
+}
+
+impl Default for IslandRecipeConfig {
+    fn default() -> Self {
+        Self {
+            islands: 4,
+            migration_interval: 10,
+            migration_count: 1,
+        }
+    }
+}
+
 /// Best design from one Recipe A run.
 #[derive(Clone, Debug)]
 pub struct RecipeAResult {
@@ -228,6 +255,144 @@ pub struct RecipeAResult {
     pub stack: navette::smatrix::synthesis::structure::DesignStack,
     pub merit: f64,
     pub generations: usize,
+}
+
+/// Best design plus the policy bookkeeping from an island run.
+#[derive(Clone, Debug)]
+pub struct IslandRecipeResult {
+    pub best: RecipeAResult,
+    /// Final best merit on each island, in island order.
+    pub island_bests: Vec<f64>,
+    /// Number of migration events; each island receives once per event.
+    pub migrations: usize,
+    /// Effective migrants per island per event (after the 5% cap).
+    pub migrants_per_event: usize,
+}
+
+fn validate_recipe_a(cfg: &RecipeAConfig) -> Result<(), String> {
+    if cfg.population_size < 2 {
+        return Err("Recipe A needs a population of at least 2".into());
+    }
+    if cfg.max_layers == 0 {
+        return Err("Recipe A needs max_layers >= 1".into());
+    }
+    if cfg.generations == 0 {
+        return Err("Recipe A needs at least one generation".into());
+    }
+    if !cfg.mutation_sigma.is_finite() || cfg.mutation_sigma <= 0.0 {
+        return Err("Recipe A mutation_sigma must be finite and positive".into());
+    }
+    Ok(())
+}
+
+fn recipe_a_fitness(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+) -> impl Fn(&[KeyGene]) -> f64 + Send + Sync + 'static {
+    let decoder = decoder.clone();
+    let template = template.clone();
+    let evaluator = evaluator.clone();
+    move |dna: &[KeyGene]| -> f64 {
+        let genome = Genome::from(
+            dna.iter()
+                .map(|gene| LayerGene::new(gene.material, gene.thickness, gene.presence))
+                .collect::<Vec<_>>(),
+        );
+        let Ok(decoded) = decoder.decode(&genome) else {
+            return f64::INFINITY;
+        };
+        let Ok(stack) = template.assemble(&decoded) else {
+            return f64::INFINITY;
+        };
+        evaluator.evaluate(&stack).unwrap_or(f64::INFINITY)
+    }
+}
+
+fn build_recipe_a_ga(
+    cfg: &RecipeAConfig,
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    population: Option<Population<LayerChromosome>>,
+    generations: usize,
+    seed: Option<u64>,
+) -> Result<Ga<LayerChromosome>, String> {
+    let init_width = cfg.max_layers;
+    let init_fn = move |genes: usize, _alleles: Option<&[KeyGene]>| -> Vec<KeyGene> {
+        let mut rng = make_rng();
+        let width = if genes == 0 { init_width } else { genes };
+        (0..width).map(|_| KeyGene::random(&mut rng)).collect()
+    };
+
+    let mut builder = Ga::<LayerChromosome>::new()
+        .with_chromosome_length(ChromosomeLength::Fixed(cfg.max_layers))
+        .with_population_size(cfg.population_size)
+        .with_initialization_fn(init_fn)
+        .with_fitness_fn(recipe_a_fitness(decoder, template, evaluator))
+        .with_selection_method(Selection::Tournament)
+        .with_crossover_method(Crossover::Uniform)
+        .with_mutation_method(Mutation::Gaussian(GaussianParams {
+            sigma: Some(cfg.mutation_sigma),
+        }))
+        .with_survivor_method(Survivor::Fitness)
+        .with_problem_solving(ProblemSolving::Minimization)
+        .with_max_generations(generations);
+    if let Some(population) = population {
+        builder = builder.with_population(population);
+    }
+    if let Some(seed) = seed {
+        builder = builder.with_rng_seed(seed);
+    }
+    builder.build().map_err(|e| e.to_string())
+}
+
+fn initial_population(cfg: &RecipeAConfig, seed: Option<u64>) -> Population<LayerChromosome> {
+    set_seed(seed);
+    let mut rng = make_rng();
+    let chromosomes = (0..cfg.population_size)
+        .map(|_| {
+            let dna = (0..cfg.max_layers)
+                .map(|_| KeyGene::random(&mut rng))
+                .collect();
+            LayerChromosome::from_dna(dna)
+        })
+        .collect();
+    Population::new(chromosomes)
+}
+
+/// Ring migration: snapshot each island's best before writing, then replace
+/// each destination's worst with its predecessor's best only when strictly
+/// better. Returns the number of migration events.
+fn migrate_islands(populations: &mut [Population<LayerChromosome>], count: usize) -> usize {
+    if populations.len() < 2 || count == 0 {
+        return 0;
+    }
+    let snapshots: Vec<Vec<LayerChromosome>> = populations
+        .iter()
+        .map(|population| {
+            let mut ranked = population.chromosomes.clone();
+            ranked.sort_by(|a, b| a.fitness().total_cmp(&b.fitness()));
+            ranked.truncate(count);
+            ranked
+        })
+        .collect();
+
+    for dest in 0..populations.len() {
+        let source = (dest + populations.len() - 1) % populations.len();
+        let mut worst: Vec<usize> = (0..populations[dest].chromosomes.len()).collect();
+        worst.sort_by(|&a, &b| {
+            populations[dest].chromosomes[b]
+                .fitness()
+                .total_cmp(&populations[dest].chromosomes[a].fitness())
+        });
+        for (migrant, &index) in snapshots[source].iter().zip(worst.iter()) {
+            if migrant.fitness() < populations[dest].chromosomes[index].fitness() {
+                populations[dest].chromosomes[index] = migrant.clone();
+            }
+        }
+    }
+    populations.len()
 }
 
 /// Run Recipe A: single-island GA over random keys → decoder → navette merit.
@@ -242,60 +407,18 @@ pub fn run_recipe_a(
     evaluator: &FitnessEvaluator,
     cfg: &RecipeAConfig,
 ) -> Result<RecipeAResult, String> {
-    if cfg.population_size < 2 {
-        return Err("Recipe A needs a population of at least 2".into());
-    }
-    if cfg.max_layers == 0 {
-        return Err("Recipe A needs max_layers >= 1".into());
-    }
-    if !cfg.mutation_sigma.is_finite() || cfg.mutation_sigma <= 0.0 {
-        return Err("Recipe A mutation_sigma must be finite and positive".into());
-    }
+    validate_recipe_a(cfg)?;
     template.check_grammar(decoder.pool(), decoder.grammar())?;
 
-    let fit_decoder = decoder.clone();
-    let fit_template = template.clone();
-    let fit_evaluator = evaluator.clone();
-    let fitness_fn = move |dna: &[KeyGene]| -> f64 {
-        let genome = Genome::from(
-            dna.iter()
-                .map(|gene| LayerGene::new(gene.material, gene.thickness, gene.presence))
-                .collect::<Vec<_>>(),
-        );
-        let Ok(decoded) = fit_decoder.decode(&genome) else {
-            return f64::INFINITY;
-        };
-        let Ok(stack) = fit_template.assemble(&decoded) else {
-            return f64::INFINITY;
-        };
-        fit_evaluator.evaluate(&stack).unwrap_or(f64::INFINITY)
-    };
-
-    let init_width = cfg.max_layers;
-    let init_fn = move |genes: usize, _alleles: Option<&[KeyGene]>| -> Vec<KeyGene> {
-        let mut rng = make_rng();
-        let width = if genes == 0 { init_width } else { genes };
-        (0..width).map(|_| KeyGene::random(&mut rng)).collect()
-    };
-
-    let mut builder = Ga::<LayerChromosome>::new()
-        .with_chromosome_length(ChromosomeLength::Fixed(cfg.max_layers))
-        .with_population_size(cfg.population_size)
-        .with_initialization_fn(init_fn)
-        .with_fitness_fn(fitness_fn)
-        .with_selection_method(Selection::Tournament)
-        .with_crossover_method(Crossover::Uniform)
-        .with_mutation_method(Mutation::Gaussian(GaussianParams {
-            sigma: Some(cfg.mutation_sigma),
-        }))
-        .with_survivor_method(Survivor::Fitness)
-        .with_problem_solving(ProblemSolving::Minimization)
-        .with_max_generations(cfg.generations);
-    if let Some(seed) = cfg.seed {
-        builder = builder.with_rng_seed(seed);
-    }
-
-    let mut ga = builder.build().map_err(|e| e.to_string())?;
+    let mut ga = build_recipe_a_ga(
+        cfg,
+        decoder,
+        template,
+        evaluator,
+        None,
+        cfg.generations,
+        cfg.seed,
+    )?;
     let best = ga.run().map_err(|e| e.to_string())?.best_chromosome.clone();
     let best_genome = best.to_genome();
     let decoded = decoder.decode(&best_genome).map_err(|e| e.to_string())?;
@@ -308,6 +431,112 @@ pub fn run_recipe_a(
         stack,
         merit,
         generations: cfg.generations,
+    })
+}
+
+/// Run Recipe A on a ring of islands with best-replace-worst-if-better
+/// migration.
+///
+/// The engine is `genetic_algorithms`' single-population `Ga`, advanced one
+/// generation per island. That keeps the E09 v2 §2.8.1 rule — a migrant may
+/// never make a destination worse — explicit instead of relying on the
+/// dependency's unconditional `BestReplaceWorst` policy. A seeded run is
+/// reproducible because every island and generation gets its own derived
+/// RNG seed.
+pub fn run_recipe_a_islands(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    cfg: &RecipeAConfig,
+    islands: &IslandRecipeConfig,
+) -> Result<IslandRecipeResult, String> {
+    validate_recipe_a(cfg)?;
+    if islands.islands < 2 {
+        return Err("island Recipe A needs at least two islands".into());
+    }
+    if islands.migration_interval == 0 {
+        return Err("island Recipe A migration_interval must be >= 1".into());
+    }
+    if islands.migration_count == 0 {
+        return Err("island Recipe A migration_count must be >= 1".into());
+    }
+    template.check_grammar(decoder.pool(), decoder.grammar())?;
+
+    let cap = ((cfg.population_size as f64) * 0.05).floor().max(1.0) as usize;
+    let migrants_per_event = islands.migration_count.min(cap);
+    let mut populations: Vec<Population<LayerChromosome>> = (0..islands.islands)
+        .map(|island| {
+            let seed = cfg
+                .seed
+                .map(|base| base.wrapping_add((island as u64).wrapping_mul(1009)));
+            initial_population(cfg, seed)
+        })
+        .collect();
+    let mut migrations = 0;
+
+    for generation in 0..cfg.generations {
+        for (island, population) in populations.iter_mut().enumerate() {
+            let seed = cfg.seed.map(|base| {
+                base.wrapping_add(
+                    ((generation * islands.islands + island) as u64)
+                        .wrapping_mul(1009)
+                        .wrapping_add(7),
+                )
+            });
+            let mut ga = build_recipe_a_ga(
+                cfg,
+                decoder,
+                template,
+                evaluator,
+                Some(population.clone()),
+                1,
+                seed,
+            )?;
+            ga.run().map_err(|e| e.to_string())?;
+            *population = ga.population.clone();
+        }
+        if (generation + 1) % islands.migration_interval == 0 {
+            migrations += migrate_islands(&mut populations, migrants_per_event);
+        }
+    }
+
+    let best = populations
+        .iter()
+        .flat_map(|population| population.chromosomes.iter())
+        .min_by(|a, b| a.fitness().total_cmp(&b.fitness()))
+        .cloned()
+        .ok_or_else(|| "island Recipe A produced an empty population".to_string())?;
+    if !best.fitness().is_finite() {
+        return Err("island Recipe A found no legal design".into());
+    }
+
+    let best_genome = best.to_genome();
+    let decoded = decoder.decode(&best_genome).map_err(|e| e.to_string())?;
+    let stack = template.assemble(&decoded)?;
+    let merit = evaluator.evaluate(&stack)?;
+    let island_bests = populations
+        .iter()
+        .map(|population| {
+            population
+                .chromosomes
+                .iter()
+                .map(LayerChromosome::fitness)
+                .min_by(|a, b| a.total_cmp(b))
+                .unwrap_or(f64::INFINITY)
+        })
+        .collect();
+
+    Ok(IslandRecipeResult {
+        best: RecipeAResult {
+            best_genome,
+            decoded,
+            stack,
+            merit,
+            generations: cfg.generations,
+        },
+        island_bests,
+        migrations,
+        migrants_per_event,
     })
 }
 
@@ -430,5 +659,80 @@ mod tests {
         assert!(result.decoded.len() <= cfg.max_layers);
         assert!(result.merit.is_finite(), "{result:?}");
         assert_eq!(evaluator.evaluate(&result.stack).unwrap(), result.merit);
+    }
+
+    #[test]
+    fn migration_only_replaces_a_worse_destination() {
+        let chromosome = |fitness: f64| {
+            let mut chromosome = LayerChromosome::from_dna(vec![KeyGene::new(0.0, 0.0, 0.0)]);
+            chromosome.set_fitness(fitness);
+            chromosome
+        };
+
+        let mut islands = vec![
+            Population::new(vec![chromosome(1.0), chromosome(5.0)]),
+            Population::new(vec![chromosome(2.0), chromosome(9.0)]),
+        ];
+        assert_eq!(migrate_islands(&mut islands, 1), 2);
+        // Ring: 0 gets 1's best (2 < 5); 1 gets 0's best (1 < 9).
+        assert_eq!(islands[0].chromosomes[1].fitness(), 2.0);
+        assert_eq!(islands[1].chromosomes[1].fitness(), 1.0);
+
+        let mut islands = vec![
+            Population::new(vec![chromosome(1.0), chromosome(2.0)]),
+            Population::new(vec![chromosome(3.0), chromosome(4.0)]),
+        ];
+        assert_eq!(migrate_islands(&mut islands, 1), 2);
+        // 0's worst (2) is already better than 1's best (3), so it stays;
+        // 1's worst (4) is replaced by 0's best (1).
+        assert_eq!(islands[0].chromosomes[1].fitness(), 2.0);
+        assert_eq!(islands[1].chromosomes[1].fitness(), 1.0);
+    }
+
+    #[test]
+    fn island_recipe_a_runs_and_returns_a_legal_design() {
+        let pool = MaterialPool::new(vec![
+            Material::new("H", 20.0, 200.0).unwrap(),
+            Material::new("L", 10.0, 150.0).unwrap(),
+        ])
+        .unwrap();
+        let decoder = Decoder::without_constraints(pool).unwrap();
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0),
+            constant("substrate", 1.52, 0.0),
+            vec![constant("H", 2.2, 0.0), constant("L", 1.46, 0.0)],
+        )
+        .unwrap();
+        let evaluator = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            zero_spec(),
+            EvaluatorOptions::default(),
+        )
+        .unwrap();
+        let cfg = RecipeAConfig {
+            population_size: 8,
+            generations: 3,
+            max_layers: 4,
+            mutation_sigma: 0.2,
+            seed: Some(13),
+        };
+        let policy = IslandRecipeConfig {
+            islands: 2,
+            migration_interval: 1,
+            migration_count: 1,
+        };
+        let result = run_recipe_a_islands(&decoder, &template, &evaluator, &cfg, &policy).unwrap();
+
+        assert_eq!(result.island_bests.len(), 2);
+        assert_eq!(result.migrations, cfg.generations * policy.islands);
+        assert_eq!(result.migrants_per_event, 1);
+        assert!(result.island_bests.iter().all(|merit| merit.is_finite()));
+        assert!(result.best.decoded.len() <= cfg.max_layers);
+        assert!(result.best.merit.is_finite(), "{result:?}");
+        assert_eq!(
+            evaluator.evaluate(&result.best.stack).unwrap(),
+            result.best.merit
+        );
     }
 }

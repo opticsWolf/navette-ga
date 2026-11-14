@@ -8,9 +8,9 @@ This is the working repository for the strategy set in
 decoding, islands/tribes, needle-memetic refinement, multi-objective splits,
 quality-diversity archives, and the study/proof layer around them.
 
-**Status:** Phase 1 in progress. `ga::decoder` (G2), the `ga::bridge` core
-(G1), the A1 memetic operator, and a single-island Recipe A GA path are
-implemented and tested. The GA runs `genetic_algorithms` over three random
+**Status:** Phase 2 in progress. `ga::decoder` (G2), the `ga::bridge` core
+(G1), the A1 memetic operator, and both Recipe A GA paths (single island and
+the Phase 2 ring) are implemented and tested. The GA runs `genetic_algorithms` over three random
 keys per layer, decodes with presence-coded variable length, assembles a
 navette `DesignStack`, and minimizes joint merit. Closed-form quarter-wave and
 V-coat checks pass, and the G9 micro-bench covers evaluate, LM, A1 scan, and
@@ -19,10 +19,12 @@ bridge now carries navette's insert and edge-list boundary rules, maps
 single-material edges to decoder pins, and checks insert pairs against the
 adjacency grammar (E09 v2 §2.4.1 Phase 1), and verifies flat boundary needles
 against host and edge rules; single-material edges become pins, multi-material
-edges validate at assembly, and seeding is rejected. Joint boundary needles,
-joint gaps, multi-material edge checks, A2/A4, and the Phase 2 island driver
-remain. Publishing waits for a navette release containing A1/A3. The
-specification of record is
+edges validate at assembly, and seeding is rejected. The Phase 2 island
+driver is in place (`run_recipe_a_islands`: ring, one best migrant capped at
+5%, best-replace-worst-if-better). Joint boundary needles, joint gaps,
+multi-material edge checks, variable-length operators, and A2/A4 remain.
+Publishing waits for a navette release containing A1/A3. The specification of
+record is
 [`E09_rust_implementation_strategy_v2.md`](docs/strategy/E09_rust_implementation_strategy_v2.md)
 and [`E10_cherrypick_reassembly_v2.md`](docs/strategy/E10_cherrypick_reassembly_v2.md).
 

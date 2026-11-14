@@ -51,12 +51,14 @@ impl BoundaryRules {
     }
 
     /// Reuse a navette [`NeedleRules`] value. Edge seeding is refused here;
-    /// it is not a Phase 1 feature.
+    /// it inserts a film and changes the decoded layer count, so the bridge
+    /// uses decoder pins for a single-material edge list.
     pub fn from_needle_rules(rules: NeedleRules) -> Result<Self, String> {
         if rules.seed_edges.is_some() {
             return Err(
-                "boundary rules: seed_edges is deferred to Phase 2; use decoder pins \
-                 for the initial edge material"
+                "boundary rules: seed_edges is not supported; seeding inserts a film \
+                 and changes the decoded layer count. Use a single-material edge list \
+                 as decoder pins, or let assemble validate the initial edge"
                     .into(),
             );
         }
@@ -80,7 +82,8 @@ impl BoundaryRules {
             .is_some_and(|rules| rules.contains_key("*"))
         {
             return Err(
-                "boundary rules: the \"*\" host is not supported by StackTemplate;                  name each host material explicitly"
+                "boundary rules: the \"*\" host is not supported by StackTemplate; \
+                 name each host material explicitly"
                     .into(),
             );
         }

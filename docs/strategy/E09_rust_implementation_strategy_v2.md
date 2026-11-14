@@ -24,9 +24,9 @@ amendments are implemented by the owner, never requested.*
 - **Navette `dev_ga`:** A3 `SmatrixContext::evaluate_many` (`f0748cf`) and
   A1 `synthesis::staged` scan/insert/polish/cleanup (`b02c03f`). The staged
   surface is additive; `run_needle_cycles` is unchanged.
-- **`navette-ga`:** G2 decoder, G1 bridge, A1 memetic operator, and a
-  single-island Recipe A GA path (`genetic_algorithms` -> three-key
-  chromosome -> decoder -> navette merit).
+- **`navette-ga`:** G2 decoder, G1 bridge, A1 memetic operator, and Recipe A
+  GA paths: single-island and the Phase 2 ring (`genetic_algorithms` ->
+  three-key chromosome -> decoder -> navette merit).
 - **Phase 0 code exit:** quarter-wave and two-layer V-coat checks pass; the G9
   micro-bench covers evaluate, LM, A1 scan, and scan+insert+polish; the memetic
   operator calls the stages, not a document round-trip.
@@ -35,8 +35,7 @@ amendments are implemented by the owner, never requested.*
   expected to fail verification meanwhile.
 - **Remaining:** A2 (Jacobian/merit introspection), A4 (native bounds/grammar
   API), Phase 2 of §2.4.1 (joint boundary needles, joint gaps,
-  multi-material edges), variable-length insertion/deletion operators, and the
-  Phase 2 island driver.
+  multi-material edges), and variable-length insertion/deletion operators.
 
 ## 0. What navette already is (and why the strategy collapses around it)
 
@@ -296,7 +295,7 @@ a heuristic design decision to be ablated, not a literature constant.
 | Topology | Ring; extended ring (`Ring+1+2`) is the first connectivity upgrade via `Custom` in Phase 3; fully connected is an ablation | D01: extended rings strongest, fully connected among the weakest for DE; D13: ring/torus can beat a single receiver at low noise (not at scale); `IslandGa` defaults to Ring |
 | Interval | `k = 10`; ablate {5, 10, 20, 30} | `IslandGa` default 10; its docs give 5–20 as typical; D06's period 30 is the slow-flow end |
 | Rate and selection | One best individual per island per event (`migration_count = 1`), capped at 5% of P | `IslandGa` default 1; its docs say 1–2 is sufficient and more homogenises; D06's 5%-of-best is the high-rate ablation |
-| Replacement | Overwrite the destination's worst only if the migrant is better; then §7 legality repair; never overwrite the destination's best | D01: incoming replace worst "provided that they were better"; D13: replace only if fitter. `IslandGa`'s `BestReplaceWorst` is unconditional, so Phase 2 wraps it and the Phase 3 copy adds the check |
+| Replacement | Overwrite the destination's worst only if the migrant is better; then §7 legality repair; never overwrite the destination's best | D01: incoming replace worst "provided that they were better"; D13: replace only if fitter. `IslandGa`'s `BestReplaceWorst` is unconditional, so the Phase 2 wrapper applies the check itself and the Phase 3 copy adds it natively |
 | Timing | After evaluation of generation k, before the next breeding cycle | `IslandGa` migration cycle |
 | Parent pool | Migrants join the destination pool; recombination is within-island by default (E16) | I1 is the only cross-island exception |
 
@@ -309,8 +308,11 @@ fitter; `D02` keeps adaptive island counts as an experiment. The dependency
 source `vendor/sources/genetic_algorithms/src/engines/island/` confirms the
 `IslandGa` defaults (4 islands, interval 10, count 1, Ring,
 BestReplaceWorst); `migration.rs::replace_worst` replaces unconditionally, so
-the Phase 2 wrapper and Phase 3 copy add the fitness check. Phase 2 uses the
-dependency plus wrapper; Phase 3's copied skeleton carries the check natively.
+the Phase 2 wrapper and Phase 3 copy add the fitness check. Phase 2's wrapper
+is now `engines::run_recipe_a_islands`: it advances each island through the
+single-population `Ga` one generation at a time and applies the check itself,
+because the dependency's `IslandGa` exposes no pre-replacement hook. Phase 3's
+copied skeleton will carry the check natively.
 I1 is implemented only after the baseline policy and H0 control are measured,
 and is reported separately from H0–H7.
 
@@ -421,7 +423,8 @@ stands on E00 picks.
   forbidden needle placement under the rule matrix.
 - **Phase 2 — Recipe B core (month):** heterogeneous islands/tribes under the
   §2.8.1 island policy (ring, k=10, one best migrant,
-  best-replace-worst-if-better with legality repair), G4(a) needle-memetic,
+  best-replace-worst-if-better with legality repair; the ring driver is
+  implemented as `run_recipe_a_islands`), G4(a) needle-memetic,
   Phase 2 of §2.4.1 (joint boundary needles, joint gaps, multi-material edges),
   dynamic parsimony, moors split (S6), rung-3 pool, H0 control arm running in
   parallel (review G1/R6: if the control wins at equal compute, S2–S4 narrow

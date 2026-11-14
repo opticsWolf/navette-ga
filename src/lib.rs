@@ -33,4 +33,5 @@ pub mod bench;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The current implementation phase.
-pub const STATUS: &str = "Phase 1: Recipe A + boundary-rule pass-through (A1/A3 on navette dev_ga)";
+pub const STATUS: &str =
+    "Phase 2: Recipe A islands + boundary-rule pass-through (A1/A3 on navette dev_ga)";
