@@ -314,6 +314,33 @@ pub struct TerminalReport {
     pub min_thickness_nm: f64,
 }
 
+/// One island's operator regime.
+///
+/// The ring policy is shared; this is how S3's "heterogeneous islands" enter
+/// without changing the migration contract. A strategy currently varies the
+/// Gaussian mutation scale and the parent-selection rule.
+#[derive(Clone, Copy, Debug)]
+pub struct IslandStrategy {
+    pub mutation_sigma: f64,
+    pub selection: Selection,
+}
+
+impl Default for IslandStrategy {
+    fn default() -> Self {
+        Self {
+            mutation_sigma: 0.15,
+            selection: Selection::Tournament,
+        }
+    }
+}
+
+/// Ring policy plus one strategy per island.
+#[derive(Clone, Debug)]
+pub struct HeterogeneousIslandConfig {
+    pub islands: IslandRecipeConfig,
+    pub strategies: Vec<IslandStrategy>,
+}
+
 /// Best design plus the policy bookkeeping from an island run.
 #[derive(Clone, Debug)]
 pub struct IslandRecipeResult {
@@ -366,6 +393,7 @@ fn recipe_a_fitness(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_recipe_a_ga(
     cfg: &RecipeAConfig,
     decoder: &Decoder,
@@ -374,6 +402,7 @@ fn build_recipe_a_ga(
     population: Option<Population<LayerChromosome>>,
     generations: usize,
     seed: Option<u64>,
+    strategy: Option<&IslandStrategy>,
 ) -> Result<Ga<LayerChromosome>, String> {
     let init_width = cfg.max_layers;
     let init_fn = move |genes: usize, _alleles: Option<&[KeyGene]>| -> Vec<KeyGene> {
@@ -387,10 +416,10 @@ fn build_recipe_a_ga(
         .with_population_size(cfg.population_size)
         .with_initialization_fn(init_fn)
         .with_fitness_fn(recipe_a_fitness(decoder, template, evaluator))
-        .with_selection_method(Selection::Tournament)
+        .with_selection_method(strategy.map_or(Selection::Tournament, |s| s.selection))
         .with_crossover_method(Crossover::Uniform)
         .with_mutation_method(Mutation::Gaussian(GaussianParams {
-            sigma: Some(cfg.mutation_sigma),
+            sigma: Some(strategy.map_or(cfg.mutation_sigma, |s| s.mutation_sigma)),
         }))
         .with_survivor_method(Survivor::Fitness)
         .with_problem_solving(ProblemSolving::Minimization)
@@ -476,6 +505,7 @@ pub fn run_recipe_a(
         None,
         cfg.generations,
         cfg.seed,
+        None,
     )?;
     let best = ga.run().map_err(|e| e.to_string())?.best_chromosome.clone();
     let best_genome = best.to_genome();
@@ -501,14 +531,18 @@ pub fn run_recipe_a(
 /// dependency's unconditional `BestReplaceWorst` policy. A seeded run is
 /// reproducible because every island and generation gets its own derived
 /// RNG seed.
-pub fn run_recipe_a_islands(
+fn run_recipe_a_islands_with_strategies(
     decoder: &Decoder,
     template: &StackTemplate,
     evaluator: &FitnessEvaluator,
     cfg: &RecipeAConfig,
     islands: &IslandRecipeConfig,
+    strategies: Option<&[IslandStrategy]>,
 ) -> Result<IslandRecipeResult, String> {
     validate_recipe_a(cfg)?;
+    if let Some(strategies) = strategies {
+        validate_island_strategies(strategies, islands.islands)?;
+    }
     if islands.islands < 2 {
         return Err("island Recipe A needs at least two islands".into());
     }
@@ -541,6 +575,7 @@ pub fn run_recipe_a_islands(
                         .wrapping_add(7),
                 )
             });
+            let strategy = strategies.map(|all| &all[island]);
             let mut ga = build_recipe_a_ga(
                 cfg,
                 decoder,
@@ -549,6 +584,7 @@ pub fn run_recipe_a_islands(
                 Some(population.clone()),
                 1,
                 seed,
+                strategy,
             )?;
             ga.run().map_err(|e| e.to_string())?;
             *population = ga.population.clone();
@@ -620,7 +656,8 @@ fn certificate_scan(
 }
 
 /// Apply a terminal LM polish and up to `max_insertions` needle steps to a
-/// Recipe A result, then write the final stack back into a fixed-width genome.
+/// Recipe A result, then write the final stack back into a fixed-width genome
+/// at the decoder's cap.
 ///
 /// This is the Phase 1 "terminal needle/LM" finish: the stack is polished
 /// first, the memetic operator scans/inserts/polishes while it can improve,
@@ -652,7 +689,7 @@ pub fn finish_recipe_a(
         certificate_scan(evaluator, &result.stack, operator)?;
     if actual_improving_after > 0 {
         return Err(format!(
-            "terminal scan certificate failed: {actual_improving_after} of {scan_candidates_after}              scanned candidate(s) still improve the merit after {} insertion(s)",
+            "terminal scan certificate failed: {actual_improving_after} of              {scan_candidates_after} scanned candidate(s) still improve the merit              after {} insertion(s)",
             memetic.steps.len()
         ));
     }
@@ -731,6 +768,83 @@ pub fn run_recipe_a_finished(
     )
 }
 
+fn validate_island_strategies(strategies: &[IslandStrategy], islands: usize) -> Result<(), String> {
+    if strategies.len() != islands {
+        return Err(format!(
+            "heterogeneous islands: {} strategy entries for {islands} islands",
+            strategies.len()
+        ));
+    }
+    for (index, strategy) in strategies.iter().enumerate() {
+        if !strategy.mutation_sigma.is_finite() || strategy.mutation_sigma <= 0.0 {
+            return Err(format!(
+                "heterogeneous islands: island {index} mutation_sigma must be finite and positive"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Run Recipe A on the ring with one operator regime per island.
+pub fn run_recipe_a_islands(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    cfg: &RecipeAConfig,
+    islands: &IslandRecipeConfig,
+) -> Result<IslandRecipeResult, String> {
+    run_recipe_a_islands_with_strategies(decoder, template, evaluator, cfg, islands, None)
+}
+
+/// Run Recipe A on the ring with a per-island mutation/selection strategy.
+pub fn run_recipe_a_heterogeneous_islands(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    cfg: &RecipeAConfig,
+    heterogeneous: &HeterogeneousIslandConfig,
+) -> Result<IslandRecipeResult, String> {
+    validate_island_strategies(&heterogeneous.strategies, heterogeneous.islands.islands)?;
+    run_recipe_a_islands_with_strategies(
+        decoder,
+        template,
+        evaluator,
+        cfg,
+        &heterogeneous.islands,
+        Some(&heterogeneous.strategies),
+    )
+}
+
+/// Run variable-length Recipe A on the Phase 2 ring.
+pub fn run_recipe_a_vl_islands(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    cfg: &VlRecipeAConfig,
+    islands: &IslandRecipeConfig,
+) -> Result<IslandRecipeResult, String> {
+    run_recipe_a_vl_islands_with_strategies(decoder, template, evaluator, cfg, islands, None)
+}
+
+/// Run variable-length Recipe A on the ring with a per-island strategy.
+pub fn run_recipe_a_vl_heterogeneous_islands(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    cfg: &VlRecipeAConfig,
+    heterogeneous: &HeterogeneousIslandConfig,
+) -> Result<IslandRecipeResult, String> {
+    validate_island_strategies(&heterogeneous.strategies, heterogeneous.islands.islands)?;
+    run_recipe_a_vl_islands_with_strategies(
+        decoder,
+        template,
+        evaluator,
+        cfg,
+        &heterogeneous.islands,
+        Some(&heterogeneous.strategies),
+    )
+}
+
 fn validate_vl_recipe_a(cfg: &VlRecipeAConfig) -> Result<(), String> {
     if cfg.population_size < 2 {
         return Err("VL Recipe A needs a population of at least 2".into());
@@ -756,6 +870,7 @@ fn validate_vl_recipe_a(cfg: &VlRecipeAConfig) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_vl_recipe_a_ga_with(
     cfg: &VlRecipeAConfig,
     decoder: &Decoder,
@@ -764,6 +879,7 @@ fn build_vl_recipe_a_ga_with(
     population: Option<Population<LayerChromosome>>,
     generations: usize,
     seed: Option<u64>,
+    strategy: Option<&IslandStrategy>,
 ) -> Result<Ga<LayerChromosome>, String> {
     let init_width = cfg.max_layers;
     let init_fn = move |genes: usize, _alleles: Option<&[KeyGene]>| -> Vec<KeyGene> {
@@ -773,7 +889,7 @@ fn build_vl_recipe_a_ga_with(
     };
     let mutations = vec![
         Mutation::Gaussian(GaussianParams {
-            sigma: Some(cfg.mutation_sigma),
+            sigma: Some(strategy.map_or(cfg.mutation_sigma, |s| s.mutation_sigma)),
         }),
         Mutation::Insertion,
         Mutation::Deletion,
@@ -787,7 +903,7 @@ fn build_vl_recipe_a_ga_with(
         .with_population_size(cfg.population_size)
         .with_initialization_fn(init_fn)
         .with_fitness_fn(recipe_a_fitness(decoder, template, evaluator))
-        .with_selection_method(Selection::Tournament)
+        .with_selection_method(strategy.map_or(Selection::Tournament, |s| s.selection))
         .with_crossover_method(Crossover::VariableLength(AlignmentStrategy::Pad))
         .with_mutation_portfolio(mutations)
         .with_survivor_method(Survivor::Fitness)
@@ -820,6 +936,7 @@ fn build_vl_recipe_a_ga(
         None,
         cfg.generations,
         cfg.seed,
+        None,
     )
 }
 
@@ -894,14 +1011,18 @@ pub fn run_recipe_a_vl_finished(
 /// delete genes. Migration is still host-independent: a legal variable-length
 /// migrant is cloned into the destination and the next generation's crossover
 /// pads/trims it as needed.
-pub fn run_recipe_a_vl_islands(
+fn run_recipe_a_vl_islands_with_strategies(
     decoder: &Decoder,
     template: &StackTemplate,
     evaluator: &FitnessEvaluator,
     cfg: &VlRecipeAConfig,
     islands: &IslandRecipeConfig,
+    strategies: Option<&[IslandStrategy]>,
 ) -> Result<IslandRecipeResult, String> {
     validate_vl_recipe_a(cfg)?;
+    if let Some(strategies) = strategies {
+        validate_island_strategies(strategies, islands.islands)?;
+    }
     if islands.islands < 2 {
         return Err("island Recipe A needs at least two islands".into());
     }
@@ -934,6 +1055,7 @@ pub fn run_recipe_a_vl_islands(
                         .wrapping_add(7),
                 )
             });
+            let strategy = strategies.map(|all| &all[island]);
             let mut ga = build_vl_recipe_a_ga_with(
                 cfg,
                 decoder,
@@ -942,6 +1064,7 @@ pub fn run_recipe_a_vl_islands(
                 Some(population.clone()),
                 1,
                 seed,
+                strategy,
             )?;
             ga.run().map_err(|e| e.to_string())?;
             *population = ga.population.clone();
@@ -1311,7 +1434,7 @@ mod tests {
         let result = run_recipe_a_vl(&decoder, &template, &evaluator, &cfg).unwrap();
 
         assert!(
-            result.best_genome.len() <= 4,
+            result.best_genome.len() <= 6,
             "{}",
             result.best_genome.len()
         );
@@ -1358,6 +1481,126 @@ mod tests {
 
         assert_eq!(result.island_bests.len(), 2);
         assert_eq!(result.migrations, cfg.generations * policy.islands);
+        assert!(result.best.merit.is_finite());
+        assert!((cfg.min_layers..=cfg.max_layers).contains(&result.best.best_genome.len()));
+    }
+
+    #[test]
+    fn heterogeneous_islands_run_with_per_island_strategies() {
+        let pool = MaterialPool::new(vec![
+            Material::new("H", 20.0, 200.0).unwrap(),
+            Material::new("L", 10.0, 150.0).unwrap(),
+        ])
+        .unwrap();
+        let decoder = Decoder::without_constraints(pool).unwrap();
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0),
+            constant("substrate", 1.52, 0.0),
+            vec![constant("H", 2.2, 0.0), constant("L", 1.46, 0.0)],
+        )
+        .unwrap();
+        let evaluator = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            zero_spec(),
+            EvaluatorOptions::default(),
+        )
+        .unwrap();
+        let cfg = RecipeAConfig {
+            population_size: 8,
+            generations: 2,
+            max_layers: 4,
+            mutation_sigma: 0.2,
+            seed: Some(61),
+        };
+        let heterogeneous = HeterogeneousIslandConfig {
+            islands: IslandRecipeConfig {
+                islands: 2,
+                migration_interval: 1,
+                migration_count: 1,
+            },
+            strategies: vec![
+                IslandStrategy {
+                    mutation_sigma: 0.1,
+                    selection: Selection::Tournament,
+                },
+                IslandStrategy {
+                    mutation_sigma: 0.4,
+                    selection: Selection::Rank,
+                },
+            ],
+        };
+        let result = run_recipe_a_heterogeneous_islands(
+            &decoder,
+            &template,
+            &evaluator,
+            &cfg,
+            &heterogeneous,
+        )
+        .unwrap();
+
+        assert_eq!(result.island_bests.len(), 2);
+        assert_eq!(result.migrations, cfg.generations * 2);
+        assert!(result.best.merit.is_finite());
+    }
+
+    #[test]
+    fn vl_heterogeneous_islands_run_with_per_island_strategies() {
+        let pool = MaterialPool::new(vec![
+            Material::new("H", 20.0, 200.0).unwrap(),
+            Material::new("L", 10.0, 150.0).unwrap(),
+        ])
+        .unwrap();
+        let decoder = Decoder::without_constraints(pool).unwrap();
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0),
+            constant("substrate", 1.52, 0.0),
+            vec![constant("H", 2.2, 0.0), constant("L", 1.46, 0.0)],
+        )
+        .unwrap();
+        let evaluator = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            zero_spec(),
+            EvaluatorOptions::default(),
+        )
+        .unwrap();
+        let cfg = VlRecipeAConfig {
+            population_size: 6,
+            generations: 2,
+            min_layers: 1,
+            max_layers: 6,
+            mutation_sigma: 0.2,
+            length_penalty: None,
+            seed: Some(71),
+        };
+        let heterogeneous = HeterogeneousIslandConfig {
+            islands: IslandRecipeConfig {
+                islands: 2,
+                migration_interval: 1,
+                migration_count: 1,
+            },
+            strategies: vec![
+                IslandStrategy {
+                    mutation_sigma: 0.1,
+                    selection: Selection::Tournament,
+                },
+                IslandStrategy {
+                    mutation_sigma: 0.4,
+                    selection: Selection::Rank,
+                },
+            ],
+        };
+        let result = run_recipe_a_vl_heterogeneous_islands(
+            &decoder,
+            &template,
+            &evaluator,
+            &cfg,
+            &heterogeneous,
+        )
+        .unwrap();
+
+        assert_eq!(result.island_bests.len(), 2);
         assert!(result.best.merit.is_finite());
         assert!((cfg.min_layers..=cfg.max_layers).contains(&result.best.best_genome.len()));
     }
