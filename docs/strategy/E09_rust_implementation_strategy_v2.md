@@ -31,7 +31,7 @@ amendments are implemented by the owner, never requested.*
   public ordered material evaluation; terminal LM + needle finish with
   Lamarckian genome write-back and an actual-trial scan certificate; C00-class
   AR ledger at `docs/studies/phase1_c00_ar.md` (16 layers, avg R = 0.659 %,
-  no actually improving scanned candidate). Full suite: 42 tests.
+  no actually improving scanned candidate). Full suite: 43 tests.
 - **Phase 2 VL operators:** `VlRecipeAConfig` uses a true variable-length
   chromosome, `VariableLength(Pad)` crossover, and a Gaussian + insertion +
   deletion mutation portfolio; `length_penalty` adds static parsimony, and
@@ -52,7 +52,7 @@ amendments are implemented by the owner, never requested.*
   expected to fail verification meanwhile.
 - **Remaining:** A2 (Jacobian/merit introspection), A4 (native bounds/grammar
   API), and the remaining Phase 2 of §2.4.1 (spectral joint scan/polish runs,
-  `run_needle_cycles` equivalence, and full multi-material joint runs).
+  joint `run_needle_cycles` equivalence, and full multi-material joint runs).
 
 ## 0. What navette already is (and why the strategy collapses around it)
 

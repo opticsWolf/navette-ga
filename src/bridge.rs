@@ -863,6 +863,57 @@ mod tests {
     }
 
     #[test]
+    fn staged_cycle_matches_run_needle_cycles_for_one_flat_insertion() {
+        use navette::smatrix::synthesis::cycle::run_needle_cycles;
+
+        let spec = zero_reflectance_spec(0.0, 550.0);
+        let mut ev = evaluator(spec.clone());
+        let spectral = SpectralInputs::from_spec(&spec, &[Radians::ZERO], &[550.0]).unwrap();
+        let pool = navette::smatrix::synthesis::cycle::MaterialPool::from(vec![
+            constant("H", 2.2, 0.0, 1),
+            constant("L", 1.46, 0.0, 1),
+        ]);
+        let cfg = NeedleCycleConfig {
+            max_needles: 1,
+            scan_step_nm: 10.0,
+            ..NeedleCycleConfig::default()
+        };
+        let stack = fixed_stack(
+            vec![constant("H", 2.2, 40.0, 1), constant("L", 1.46, 40.0, 1)],
+            1,
+        );
+
+        let mut macro_stack = stack.clone();
+        run_needle_cycles(ev.context_mut(), &mut macro_stack, &spectral, &pool, &cfg).unwrap();
+
+        let mut staged = stack;
+        staged
+            .polish_needles(ev.context_mut(), PolishScope::All)
+            .unwrap();
+        let scan = staged
+            .needle_scan(ev.context(), &spectral, &pool, &cfg)
+            .unwrap();
+        if let Some(candidate) = scan.best() {
+            staged.insert_needle_candidate(&pool, candidate).unwrap();
+            staged
+                .polish_needles(ev.context_mut(), PolishScope::All)
+                .unwrap();
+        }
+
+        assert_eq!(staged.films().len(), macro_stack.films().len());
+        for (row, (a, b)) in staged.films().iter().zip(macro_stack.films()).enumerate() {
+            assert_eq!(a.material, b.material, "row {row}");
+            assert!(
+                (a.d_nm - b.d_nm).abs() < 1e-6,
+                "row {row}: {} vs {}",
+                a.d_nm,
+                b.d_nm
+            );
+        }
+        assert!((ev.evaluate(&staged).unwrap() - ev.evaluate(&macro_stack).unwrap()).abs() < 1e-9);
+    }
+
+    #[test]
     fn joint_gap_accepts_checks_environments_edges_and_a_barrier() {
         let insert: InsertRules = [
             ("H".to_string(), vec!["B".to_string()]),
