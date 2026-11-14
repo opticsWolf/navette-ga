@@ -21,6 +21,7 @@ use navette::smatrix::synthesis::context::DesignContext;
 use navette::smatrix::synthesis::cycle::{
     InsertRules, Insertion, MaterialPool, NeedleCycleConfig, NeedleRules,
 };
+use navette::smatrix::synthesis::environments::{CompiledEnvironments, Gap};
 use navette::smatrix::synthesis::evaluator::SmatrixContext;
 use navette::smatrix::synthesis::merit::{MeritSpec, SimCurves};
 use navette::smatrix::synthesis::pipeline::SpectralInputs;
@@ -28,6 +29,24 @@ use navette::smatrix::synthesis::staged::{PolishReport, PolishScope};
 use navette::smatrix::synthesis::structure::{ClampReport, DesignStack, EdgeMaterials, LayerSpec};
 
 use crate::decoder::{AdjacencyGrammar, DecodedStack, MaterialPool as DecoderPool, Pins};
+
+/// May a needle of pool entry `needle` sit on the joint boundary locus
+/// `gap` of a multi-environment design?
+///
+/// This is the public door to navette's joint rule: the same host,
+/// neighbour, edge-list, and interface-slice checks used by the needle
+/// sweep, applied to every environment's placement of the locus. `stacks`
+/// must be the K expanded assemblies from `CompiledEnvironments::expand`.
+/// The query is read-only; it never inserts or moves a film.
+pub fn joint_gap_accepts(
+    envs: &CompiledEnvironments,
+    stacks: &[DesignStack],
+    pool: &MaterialPool,
+    gap: Gap,
+    needle: usize,
+) -> Result<bool, String> {
+    pool.gap_accepts_needle(envs, stacks, gap, needle)
+}
 
 /// A material-boundary contract for a stack template.
 ///
@@ -574,6 +593,14 @@ impl MemeticOperator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
+
+    use navette::smatrix::synthesis::design_config::{
+        DesignRequest, LayerRow, MaterialDef, StructureCfg, TabData,
+    };
+    use navette::smatrix::synthesis::environments::{
+        build_environments, DesignSegmentCfg, EnvSegmentCfg, EnvironmentCfg,
+    };
     use navette::smatrix::synthesis::merit::{
         ConstraintKind, CurveId, MeritKey, MeritTarget, SimTransform,
     };
@@ -687,6 +714,116 @@ mod tests {
 
         assert!((stack.films()[0].d_nm - d_nm).abs() < 1e-12);
         assert!(reflectance(&stack) < 1e-24);
+    }
+
+    fn joint_row(code: &str, d_nm: f64) -> LayerRow {
+        LayerRow {
+            material_code: code.to_string(),
+            thickness_nm: d_nm,
+            coherent: true,
+            roughness_nm: 0.0,
+            rough_type: 0,
+            inhomogen: false,
+            inh_delta: 0.1,
+            interface: false,
+            interface_thickness_nm: 0.0,
+            optimize: true,
+            needle: true,
+            layer_type: 1,
+            gradient: None,
+        }
+    }
+
+    fn joint_material(name: &str, n: f64) -> MaterialDef {
+        MaterialDef {
+            name: name.to_string(),
+            code: None,
+            model: "TableMaterial".to_string(),
+            params: BTreeMap::new(),
+            n_data: Some(TabData {
+                wavelengths: vec![500.0, 600.0],
+                values: vec![n, n],
+            }),
+            k_data: None,
+        }
+    }
+
+    #[test]
+    fn joint_gap_accepts_checks_environments_and_edge_lists() {
+        let insert: InsertRules = [
+            ("H".to_string(), vec!["G".to_string()]),
+            ("L".to_string(), vec!["G".to_string()]),
+        ]
+        .into_iter()
+        .collect();
+        let request = DesignRequest {
+            structure: StructureCfg {
+                label: "joint-gap".to_string(),
+                layers: Vec::new(),
+                groups: Vec::new(),
+            },
+            library: vec![
+                joint_material("H", 2.2),
+                joint_material("L", 1.46),
+                joint_material("G", 1.8),
+            ],
+            materials: Some(vec!["H".to_string(), "L".to_string(), "G".to_string()]),
+            insert_rules: Some(insert),
+            outer: None,
+            inner: None,
+            seed_edges: None,
+            film_flags: BTreeMap::new(),
+            per_film_flags: BTreeMap::new(),
+            ambient_name: "air".to_string(),
+            substrate_name: "sub".to_string(),
+            design: [(
+                "coat".to_string(),
+                DesignSegmentCfg {
+                    layers: vec![joint_row("H", 80.0), joint_row("L", 100.0)],
+                    outer: Some(vec!["H".to_string()]),
+                    inner: Some(vec!["L".to_string()]),
+                },
+            )]
+            .into_iter()
+            .collect(),
+            environments: ["front", "back"]
+                .into_iter()
+                .map(|name| EnvironmentCfg {
+                    name: name.to_string(),
+                    stack: vec![EnvSegmentCfg {
+                        layers: None,
+                        design: Some("coat".to_string()),
+                        repeat: None,
+                        inverted: false,
+                    }],
+                })
+                .collect(),
+        };
+        let (envs, pool, warnings) = build_environments(&request, &[550.0]).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(envs.n_envs(), 2);
+        let stacks = envs.expand(&envs.stacks()[0]).unwrap();
+        assert_eq!(stacks.len(), 2);
+        let g = pool
+            .iter()
+            .position(|entry| entry.material.as_ref() == "G")
+            .unwrap();
+        let thicknesses: Vec<Vec<f64>> = stacks
+            .iter()
+            .map(|stack| stack.films().iter().map(|film| film.d_nm).collect())
+            .collect();
+
+        // The top edge is H, the bottom L, and G is on neither list.
+        assert!(!joint_gap_accepts(&envs, &stacks, &pool, Gap { seg: 0, k: 0 }, g).unwrap());
+        // Between H and L both hosts accept G, in every environment.
+        assert!(joint_gap_accepts(&envs, &stacks, &pool, Gap { seg: 0, k: 1 }, g).unwrap());
+        assert!(!joint_gap_accepts(&envs, &stacks, &pool, Gap { seg: 0, k: 2 }, g).unwrap());
+
+        let after: Vec<Vec<f64>> = stacks
+            .iter()
+            .map(|stack| stack.films().iter().map(|film| film.d_nm).collect())
+            .collect();
+        assert_eq!(after, thicknesses, "a gap query must not move a film");
     }
 
     #[test]

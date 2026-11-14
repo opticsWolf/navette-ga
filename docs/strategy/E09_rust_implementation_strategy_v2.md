@@ -31,7 +31,7 @@ amendments are implemented by the owner, never requested.*
   public ordered material evaluation; terminal LM + needle finish with
   Lamarckian genome write-back and an actual-trial scan certificate; C00-class
   AR ledger at `docs/studies/phase1_c00_ar.md` (16 layers, avg R = 0.659 %,
-  no actually improving scanned candidate). Full suite: 39 tests.
+  no actually improving scanned candidate). Full suite: 40 tests.
 - **Phase 2 VL operators:** `VlRecipeAConfig` uses a true variable-length
   chromosome, `VariableLength(Pad)` crossover, and a Gaussian + insertion +
   deletion mutation portfolio; `length_penalty` adds static parsimony, and
@@ -48,8 +48,9 @@ amendments are implemented by the owner, never requested.*
   local-path-only until a navette release carries them; `cargo publish` is
   expected to fail verification meanwhile.
 - **Remaining:** A2 (Jacobian/merit introspection), A4 (native bounds/grammar
-  API), Phase 2 of §2.4.1 (joint boundary needles, joint gaps,
-  multi-material edges) and constraint-regime tribes.
+  API), the remaining Phase 2 of §2.4.1 (joint insertion runs,
+  `run_needle_cycles` equivalence, diffusion-barrier acceptance, multi-material
+  joint validation) and constraint-regime tribes.
 
 ## 0. What navette already is (and why the strategy collapses around it)
 
@@ -240,18 +241,24 @@ The remaining investigation has five parts:
    adjacency truth.
 3. **Boundary needles.** The flat staged `scan` is now covered: with
    `boundary_needles` on, a boundary needle is accepted when both hosts allow
-   it and rejected when the edge list excludes it. The joint `gap_accepts`
-   path, multi-environment equivalence, and the no-edge-move assertion for
-   polish/cleanup remain.
+   it and rejected when the edge list excludes it. The joint path now has a
+   read-only public door, `MaterialPool::gap_accepts_needle`, and the
+   `navette-ga` bridge exposes `joint_gap_accepts`; a two-environment test
+   checks host/edge acceptance at the top, interior, and bottom loci and
+   asserts that the query moves no film. The actual joint insertion run,
+   equivalence with `run_needle_cycles`, polish/cleanup edge-move assertions,
+   and the diffusion-barrier acceptance case remain.
 4. **Evidence.** Phase 1 covers label resolution, empty/unknown edge lists,
    assembled edges, edge-to-pin mapping, grammar bidirectionality, and a
    restricted scan, a flat boundary needle filtered by host and edge rules,
-   multi-material validation, and the `"*"` rejection. Phase 2 adds
-   contradiction diagnostics, a multi-environment gap, equivalence with
-   `run_needle_cycles` under the same `NeedleRules`, and a diffusion-barrier /
-   edge-layer filter as the acceptance case; no-rules runs stay bit-identical.
-5. **Scope.** Phase 1 is complete. Phase 2 adds joint boundary needles, joint
-   gaps, and multi-material joint validation.
+   multi-material validation, the `"*"` rejection, and the public joint-gap
+   acceptance door with a two-environment edge/neighbour check. Phase 2 still
+   adds contradiction diagnostics, a joint insertion run, equivalence with
+   `run_needle_cycles` under the same `NeedleRules`, polish/cleanup edge-move
+   assertions, and a diffusion-barrier / edge-layer filter as the acceptance
+   case; no-rules runs stay bit-identical.
+5. **Scope.** Phase 1 is complete. Phase 2 adds joint gap acceptance (done),
+   the joint insertion run, and multi-material joint validation.
 
 **2.5 MOO split-off.** `moors` builders with fitness closures over the G1
 bridge; objectives (merit, N, total thickness, robustness perturbation,
