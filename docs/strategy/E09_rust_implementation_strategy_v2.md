@@ -45,9 +45,10 @@ amendments are implemented by the owner, never requested.*
 - **Release gate:** A1/A3/A2 are not in published navette 0.10.0. The bridge
   is local-path-only until a navette release carries them; `cargo publish` is
   expected to fail verification meanwhile.
-- **Remaining:** navette-native A4 (per-material bounds and insert/migrate
-  grammar hook), H6/H7 dispatch, a 40-layer production filter and
-  merit-vs-depth bake, and the released-navette gate.
+- **Remaining:** an A2 version-matched `DMatrix` wrapper, navette-native
+  A4 (per-material bounds and insert/migrate grammar hook), H6/H7 dispatch, a
+  40-layer production filter and merit-vs-depth bake, and the
+  released-navette gate.
 
 ## 0. What navette already is (and why the strategy collapses around it)
 
@@ -356,15 +357,17 @@ extended ring; fully connected only as the low-diameter ablation.
   indices). The GA memetic operator (G4) then calls stages directly — no
   document round-trip. `run_needle` becomes a thin loop over the same stages
   (no behaviour change, existing benches stay valid).
-- **A2 — optimiser introspection for DQD (G6).** *Implemented in navette
-  `dev_ga` under the opt-in `ga-introspect` feature and exposed by the
-  bridge.* Expose the builtin LM's
-  analytic Jacobian (`jacobian() -> DMatrix<f64>`, merit × free-thickness) and
-  per-target merit breakdown (`merit_parts() -> Vec<(TargetId, f64)>`) so the
-  QD/DQD loop reads descriptor gradients without re-solving. Feature-gated
-  (`ga-introspect`) to keep default builds lean. (Honesty note per v4
-  Appendix B: this Jacobian prices thickness moves, not insertion positions —
-  it is not a P(z) adjoint and is never described as one.)
+- **A2 — optimiser introspection for DQD (G6).** *Partially implemented in
+  navette `dev_ga` under the opt-in `ga-introspect` feature and exposed by the
+  bridge.* The landed doors are per-target `merit_parts()`, the analytic
+  **residual** thickness Jacobian as `(values, rows, cols, film_rows)`, and
+  the merit gradient `2 Jᵀr`. The bridge returns `JacobianReport` and
+  `MeritGradient`; only a version-matched `DMatrix` wrapper remains, because
+  navette's `ndarray` major and `moors`' differ. The QD/DQD loop reads the residual
+  Jacobian without re-solving. Feature-gated (`ga-introspect`) to keep default
+  builds lean. (Honesty note per v4 Appendix B: this Jacobian prices thickness
+  moves, not insertion positions — it is not a P(z) adjoint and is never
+  described as one.)
 - **A3 — batch evaluation.** `evaluate_many(&[DesignStack]) -> Vec<Merit>`
   with rayon over population × λ × θ jointly *inside* navette — settles the
   §2.1 nesting question structurally (one scheduler sees the whole grid)

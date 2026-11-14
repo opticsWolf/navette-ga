@@ -56,6 +56,10 @@ edges only when the multi-material edge lists contain it.
 - The bridge exposes `FitnessEvaluator::merit_parts` and
   `FitnessEvaluator::thickness_residual_jacobian`. The test verifies the parts
   sum to the scalar merit and the Jacobian has one column per free film.
+  The returned Jacobian is the **residual** matrix plus its shape and film
+  rows; `merit_thickness_gradient` composes `2 Jᵀr`. Only a version-matched
+  `DMatrix` wrapper remains (navette's `ndarray` major differs from
+  `moors`').
 
 Honesty boundary: the Jacobian prices thickness moves, not insertion
 positions. It is not a P(z) adjoint.

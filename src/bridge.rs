@@ -561,6 +561,13 @@ pub struct MeritPart {
     pub merit: f64,
 }
 
+/// A2: the merit gradient with respect to free thicknesses (`2 Jᵀr`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct MeritGradient {
+    pub values: Vec<f64>,
+    pub film_rows: Vec<usize>,
+}
+
 /// A2: the analytic thickness residual Jacobian at one design.
 ///
 /// `values` is row-major `rows × cols`. A column is one LM free-thickness
@@ -711,6 +718,18 @@ impl FitnessEvaluator {
                 cols,
                 film_rows,
             }))
+    }
+
+    /// A2: the merit gradient with respect to free thicknesses, or `None`
+    /// when the analytic Jacobian declines the spec.
+    pub fn merit_thickness_gradient(
+        &self,
+        stack: &DesignStack,
+    ) -> Result<Option<MeritGradient>, String> {
+        Ok(self
+            .ctx
+            .merit_thickness_gradient(stack)?
+            .map(|(values, film_rows)| MeritGradient { values, film_rows }))
     }
 
     /// A2/F2.3: read-only spectral joint scan on this context's environments.
@@ -1089,6 +1108,10 @@ mod tests {
         assert_eq!(jacobian.film_rows, vec![0]);
         assert_eq!(jacobian.values.len(), jacobian.rows);
         assert!(jacobian.rows > 0);
+        let gradient = ev.merit_thickness_gradient(&stack).unwrap().unwrap();
+        assert_eq!(gradient.values.len(), 1);
+        assert_eq!(gradient.film_rows, vec![0]);
+        assert!(gradient.values[0].is_finite());
     }
 
     #[test]
