@@ -24,7 +24,7 @@ amendments are implemented by the owner, never requested.*
 - **Navette `dev_ga`:** A3 `SmatrixContext::evaluate_many` (`f0748cf`), A1
   `synthesis::staged` (`b02c03f`), A2 `ga-introspect` merit parts and
   thickness residual Jacobian, and the public read-only
-  `cycle::joint_needle_scan` (`c25a0d5`).
+  `cycle::joint_needle_scan` and the A2 merit gradient (`d9faa79`).
 - **`navette-ga`:** G2 decoder, G1 bridge, A1 memetic operator, fixed and
   variable-length Recipe A, the Phase 2 ring, and the new Phase 2/3 modules
   (`moors_split`, `qd`, `study`, `bench`). Full suite: **64 tests**.
