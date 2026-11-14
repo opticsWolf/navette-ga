@@ -19,6 +19,24 @@ dependency** — one strategy, with the copy gated as below. Owner amendments
 A1–A6 are specified in §2.9; the F5/G4(b) upstream-request protocol is gone —
 amendments are implemented by the owner, never requested.*
 
+## Implementation checkpoint (2026-11-14)
+
+- **Navette `dev_ga`:** A3 `SmatrixContext::evaluate_many` (`f0748cf`) and
+  A1 `synthesis::staged` scan/insert/polish/cleanup (`b02c03f`). The staged
+  surface is additive; `run_needle_cycles` is unchanged.
+- **`navette-ga`:** G2 decoder, G1 bridge, A1 memetic operator, and a
+  single-island Recipe A GA path (`genetic_algorithms` -> three-key
+  chromosome -> decoder -> navette merit).
+- **Phase 0 code exit:** quarter-wave and two-layer V-coat checks pass; the G9
+  micro-bench covers evaluate, LM, A1 scan, and scan+insert+polish; the memetic
+  operator calls the stages, not a document round-trip.
+- **Release gate:** A1/A3 are not in published navette 0.10.0. The bridge is
+  local-path-only until a navette release carries them; `cargo publish` is
+  expected to fail verification meanwhile.
+- **Remaining:** A2 (Jacobian/merit introspection), A4 (native bounds/grammar
+  API), variable-length insertion/deletion operators, and the Phase 2 island
+  driver.
+
 ## 0. What navette already is (and why the strategy collapses around it)
 
 - **Pure-Rust engine crate** (`rust/navette`, rlib) + PyO3 wheel (`navette-py`,
