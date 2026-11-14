@@ -25,10 +25,11 @@ adjacency grammar (E09 v2 §2.4.1 Phase 1), and verifies flat boundary needles
 against host and edge rules; single-material edges become pins, multi-material
 edges validate at assembly, and seeding is rejected. The Phase 2 island
 driver is in place (`run_recipe_a_islands`: ring, one best migrant capped at
-5%, best-replace-worst-if-better). Read-only joint gap acceptance and a
-transactional chosen-locus joint insertion are exposed through
-`joint_gap_accepts` / `joint_gap_insert`; a joint scan/polish run,
-multi-material joint checks, constraint-regime tribes, and A2/A4 remain.
+5%, best-replace-worst-if-better). Read-only joint gap acceptance, structural
+candidate enumeration, and transactional chosen-locus insertion are exposed
+through `joint_gap_accepts` / `joint_gap_sites` / `joint_gap_insert`; a spectral
+joint scan/polish run, multi-material joint checks, constraint-regime tribes,
+and A2/A4 remain.
 Publishing waits for a navette release containing A1/A3. The specification of
 record is
 [`E09_rust_implementation_strategy_v2.md`](docs/strategy/E09_rust_implementation_strategy_v2.md)

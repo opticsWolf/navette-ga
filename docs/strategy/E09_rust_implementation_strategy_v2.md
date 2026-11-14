@@ -48,7 +48,7 @@ amendments are implemented by the owner, never requested.*
   local-path-only until a navette release carries them; `cargo publish` is
   expected to fail verification meanwhile.
 - **Remaining:** A2 (Jacobian/merit introspection), A4 (native bounds/grammar
-  API), the remaining Phase 2 of §2.4.1 (joint scan/polish runs,
+  API), the remaining Phase 2 of §2.4.1 (spectral joint scan/polish runs,
   `run_needle_cycles` equivalence, diffusion-barrier acceptance,
   multi-material joint validation) and constraint-regime tribes.
 
@@ -245,20 +245,22 @@ The remaining investigation has five parts:
    read-only public door, `MaterialPool::gap_accepts_needle`, and the
    `navette-ga` bridge exposes `joint_gap_accepts`; a two-environment test
    checks host/edge acceptance at the top, interior, and bottom loci and
-   asserts that the query moves no film. `joint_gap_insert` gates a chosen
-   needle through the same door and inserts it transactionally into every
-   environment, extending the routing table; the same test verifies one
-   shared 25 nm film and the post-insert neighbour rejection. A joint
-   scan/polish run, equivalence with `run_needle_cycles`, polish/cleanup
+   asserts that the query moves no film. `joint_gap_sites` enumerates every
+   accepted (locus, pool entry) pair without a spectral gain estimate;
+   `joint_gap_insert` gates a chosen needle through the same door and inserts
+   it transactionally into every environment, extending the routing table.
+   The same test verifies one shared 25 nm film, the refused outer locus
+   leaving the design unchanged, and the post-insert neighbour rejection. A
+   spectral joint scan/polish run, equivalence with `run_needle_cycles`, polish/cleanup
    edge-move assertions, and the diffusion-barrier acceptance case remain.
 4. **Evidence.** Phase 1 covers label resolution, empty/unknown edge lists,
    assembled edges, edge-to-pin mapping, grammar bidirectionality, and a
    restricted scan, a flat boundary needle filtered by host and edge rules,
    multi-material validation, the `"*"` rejection, and the public joint-gap
    acceptance door with a two-environment edge/neighbour check. Phase 2 still
-   adds contradiction diagnostics, chosen-locus joint insertion (done),
-   equivalence with `run_needle_cycles` under the same `NeedleRules`, a joint
-   scan/polish run, polish/cleanup edge-move assertions, and a
+   adds contradiction diagnostics, structural joint candidate enumeration and
+   chosen-locus insertion (done), equivalence with `run_needle_cycles` under
+   the same `NeedleRules`, a spectral joint scan/polish run, polish/cleanup edge-move assertions, and a
    diffusion-barrier / edge-layer filter as the acceptance case; no-rules runs
    stay bit-identical.
 5. **Scope.** Phase 1 is complete. Phase 2 adds joint gap acceptance and a

@@ -48,6 +48,36 @@ pub fn joint_gap_accepts(
     pool.gap_accepts_needle(envs, stacks, gap, needle)
 }
 
+/// One accepted joint-boundary needle site: a locus and a pool entry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct JointGapSite {
+    pub gap: Gap,
+    pub needle: usize,
+}
+
+/// Enumerate every pool entry accepted at every joint boundary locus.
+///
+/// This is the structural half of a joint boundary scan: it applies the
+/// same host, neighbour, edge-list, and interface-slice rule as the
+/// single-environment staged scan, but over every environment's placement
+/// and without a spectral gain estimate. Use it to build a candidate list
+/// for [`joint_gap_insert`] or to audit a rule set before a run.
+pub fn joint_gap_sites(
+    envs: &CompiledEnvironments,
+    stacks: &[DesignStack],
+    pool: &MaterialPool,
+) -> Result<Vec<JointGapSite>, String> {
+    let mut sites = Vec::new();
+    for gap in envs.gaps() {
+        for needle in 0..pool.len() {
+            if pool.gap_accepts_needle(envs, stacks, gap, needle)? {
+                sites.push(JointGapSite { gap, needle });
+            }
+        }
+    }
+    Ok(sites)
+}
+
 /// Insert a needle at a joint boundary locus and return the new slot plus
 /// the K expanded assemblies.
 ///
@@ -867,6 +897,14 @@ mod tests {
         assert!(joint_gap_accepts(&envs, &stacks, &pool, Gap { seg: 0, k: 1 }, g).unwrap());
         assert!(!joint_gap_accepts(&envs, &stacks, &pool, Gap { seg: 0, k: 2 }, g).unwrap());
 
+        let sites = joint_gap_sites(&envs, &stacks, &pool).unwrap();
+        assert!(sites.contains(&JointGapSite {
+            gap: Gap { seg: 0, k: 1 },
+            needle: g,
+        }));
+        assert!(!sites.iter().any(|site| site.needle == g
+            && (site.gap == Gap { seg: 0, k: 0 } || site.gap == Gap { seg: 0, k: 2 })));
+
         let after: Vec<Vec<f64>> = stacks
             .iter()
             .map(|stack| stack.films().iter().map(|film| film.d_nm).collect())
@@ -874,6 +912,21 @@ mod tests {
         assert_eq!(after, thicknesses, "a gap query must not move a film");
 
         let mut design = envs.stacks()[0].clone();
+        let mut refused_envs = envs.clone();
+        let mut refused_design = design.clone();
+        let refused_gap = Gap { seg: 0, k: 0 };
+        assert!(joint_gap_insert(
+            &mut refused_envs,
+            &mut refused_design,
+            &pool,
+            refused_gap,
+            g,
+            25.0
+        )
+        .is_err());
+        assert_eq!(refused_design.films().len(), 2);
+        assert_eq!(refused_envs.gaps(), envs.gaps());
+
         let insertion_gap = Gap { seg: 0, k: 1 };
         let (slot, inserted) =
             joint_gap_insert(&mut envs, &mut design, &pool, insertion_gap, g, 25.0).unwrap();

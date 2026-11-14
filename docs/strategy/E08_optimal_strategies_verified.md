@@ -24,8 +24,9 @@ crate claims ("only X does Y") mean "among surveyed crates", not the world.*
   are checked for bidirectional grammar legality; the flat boundary needle is
   covered, including edge-list rejection. Pins are used for single-material
   edges and seeding is rejected. Phase 2 now has read-only joint gap
-  acceptance (`gap_accepts_needle` / `joint_gap_accepts`) and a transactional
-  chosen-locus joint insertion (`joint_gap_insert`); a joint scan/polish run,
+  acceptance (`gap_accepts_needle` / `joint_gap_accepts`), structural
+  candidate enumeration (`joint_gap_sites`), and transactional chosen-locus
+  insertion (`joint_gap_insert`); a spectral joint scan/polish run,
   multi-material joint validation, and `run_needle_cycles` equivalence remain
   (E09 v2 §2.4.1). It is a data contract, not a second adjacency grammar.
 - **Phase 1 exit artifact:** the G3 material loader consumes navette's ordered
