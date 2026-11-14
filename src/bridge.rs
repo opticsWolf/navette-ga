@@ -863,10 +863,10 @@ mod tests {
     }
 
     #[test]
-    fn joint_gap_accepts_checks_environments_and_edge_lists() {
+    fn joint_gap_accepts_checks_environments_edges_and_a_barrier() {
         let insert: InsertRules = [
-            ("H".to_string(), vec!["G".to_string()]),
-            ("L".to_string(), vec!["G".to_string()]),
+            ("H".to_string(), vec!["B".to_string()]),
+            ("L".to_string(), vec!["B".to_string()]),
         ]
         .into_iter()
         .collect();
@@ -879,9 +879,9 @@ mod tests {
             library: vec![
                 joint_material("H", 2.2),
                 joint_material("L", 1.46),
-                joint_material("G", 1.8),
+                joint_material("B", 1.8),
             ],
-            materials: Some(vec!["H".to_string(), "L".to_string(), "G".to_string()]),
+            materials: Some(vec!["H".to_string(), "L".to_string(), "B".to_string()]),
             insert_rules: Some(insert),
             outer: None,
             inner: None,
@@ -920,16 +920,16 @@ mod tests {
         assert_eq!(stacks[1].films().len(), 3);
         let g = pool
             .iter()
-            .position(|entry| entry.material.as_ref() == "G")
+            .position(|entry| entry.material.as_ref() == "B")
             .unwrap();
         let thicknesses: Vec<Vec<f64>> = stacks
             .iter()
             .map(|stack| stack.films().iter().map(|film| film.d_nm).collect())
             .collect();
 
-        // The top edge is H, the bottom L, and G is on neither list.
+        // The top edge is H, the bottom L, and B is on neither list.
         assert!(!joint_gap_accepts(&envs, &stacks, &pool, Gap { seg: 0, k: 0 }, g).unwrap());
-        // Between H and L both hosts accept G, in every environment.
+        // Between H and L both hosts accept the barrier B, in every environment.
         assert!(joint_gap_accepts(&envs, &stacks, &pool, Gap { seg: 0, k: 1 }, g).unwrap());
         assert!(!joint_gap_accepts(&envs, &stacks, &pool, Gap { seg: 0, k: 2 }, g).unwrap());
 
@@ -942,16 +942,16 @@ mod tests {
             && (site.gap == Gap { seg: 0, k: 0 } || site.gap == Gap { seg: 0, k: 2 })));
 
         // A multi-material edge list is a set of legal edge films, not a
-        // pin: G joins each list and is accepted at both segment edges.
+        // pin: B joins each list and is accepted at both segment edges.
         let mut multi = request.clone();
         let coat = multi.design.get_mut("coat").unwrap();
-        coat.outer = Some(vec!["H".to_string(), "G".to_string()]);
-        coat.inner = Some(vec!["L".to_string(), "G".to_string()]);
+        coat.outer = Some(vec!["H".to_string(), "B".to_string()]);
+        coat.inner = Some(vec!["L".to_string(), "B".to_string()]);
         let (mut multi_envs, multi_pool, _) = build_environments(&multi, &[550.0]).unwrap();
         let multi_stacks = multi_envs.expand(&multi_envs.stacks()[0]).unwrap();
         let multi_g = multi_pool
             .iter()
-            .position(|entry| entry.material.as_ref() == "G")
+            .position(|entry| entry.material.as_ref() == "B")
             .unwrap();
         for gap in [Gap { seg: 0, k: 0 }, Gap { seg: 0, k: 2 }] {
             assert!(
@@ -969,10 +969,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(slot, 0);
-        assert_eq!(inserted[0].films()[0].material.as_ref(), "G");
+        assert_eq!(inserted[0].films()[0].material.as_ref(), "B");
         assert_eq!(inserted[0].films()[0].d_nm, 15.0);
         assert_eq!(inserted[1].films()[0].d_nm, 300.0);
-        assert_eq!(inserted[1].films()[1].material.as_ref(), "G");
+        assert_eq!(inserted[1].films()[1].material.as_ref(), "B");
         assert_eq!(inserted[1].films()[1].d_nm, 15.0);
 
         let after: Vec<Vec<f64>> = stacks
@@ -1004,10 +1004,10 @@ mod tests {
         assert_eq!(inserted.len(), 2);
         assert_eq!(inserted[0].films().len(), 3);
         assert_eq!(inserted[0].films()[1].d_nm, 25.0);
-        assert_eq!(inserted[0].films()[1].material.as_ref(), "G");
+        assert_eq!(inserted[0].films()[1].material.as_ref(), "B");
         assert_eq!(inserted[1].films().len(), 4);
         assert_eq!(inserted[1].films()[2].d_nm, 25.0);
-        assert_eq!(inserted[1].films()[2].material.as_ref(), "G");
+        assert_eq!(inserted[1].films()[2].material.as_ref(), "B");
         assert!(!joint_gap_accepts(&envs, &inserted, &pool, insertion_gap, g).unwrap());
     }
 

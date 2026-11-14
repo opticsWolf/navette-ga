@@ -52,8 +52,7 @@ amendments are implemented by the owner, never requested.*
   expected to fail verification meanwhile.
 - **Remaining:** A2 (Jacobian/merit introspection), A4 (native bounds/grammar
   API), and the remaining Phase 2 of §2.4.1 (spectral joint scan/polish runs,
-  `run_needle_cycles` equivalence, diffusion-barrier acceptance, and full
-  multi-material joint runs).
+  `run_needle_cycles` equivalence, and full multi-material joint runs).
 
 ## 0. What navette already is (and why the strategy collapses around it)
 
@@ -264,9 +263,9 @@ The remaining investigation has five parts:
    acceptance door with a two-environment edge/neighbour check. Phase 2 still
    adds contradiction diagnostics, structural joint candidate enumeration and
    chosen-locus insertion (done), equivalence with `run_needle_cycles` under
-   the same `NeedleRules`, a spectral joint scan/polish run, polish/cleanup edge-move assertions, and a
-   diffusion-barrier / edge-layer filter as the acceptance case; no-rules runs
-   stay bit-identical.
+   the same `NeedleRules`, a spectral joint scan/polish run, and polish/cleanup
+   edge-move assertions; the B barrier/edge-layer case is covered and no-rules
+   runs stay bit-identical.
 5. **Scope.** Phase 1 is complete. Phase 2 adds joint gap acceptance and a
    chosen-locus joint insertion (both done), the joint scan/polish run, and
    multi-material joint validation.

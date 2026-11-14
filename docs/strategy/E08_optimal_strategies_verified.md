@@ -27,8 +27,9 @@ crate claims ("only X does Y") mean "among surveyed crates", not the world.*
   acceptance (`gap_accepts_needle` / `joint_gap_accepts`), structural
   candidate enumeration (`joint_gap_sites`), and transactional chosen-locus
   insertion (`joint_gap_insert`), including through a multi-material edge
-  list; a spectral joint scan/polish run, full multi-material joint runs, and
-  `run_needle_cycles` equivalence remain (E09 v2 §2.4.1). It is a data contract, not a second adjacency grammar.
+  list, and the B barrier/edge-layer case is covered; a spectral joint
+  scan/polish run, full multi-material joint runs, and `run_needle_cycles`
+  equivalence remain (E09 v2 §2.4.1). It is a data contract, not a second adjacency grammar.
 - **Phase 1 exit artifact:** the G3 material loader consumes navette's ordered
   material evaluation; the terminal LM/needle finish writes back into the
   genome and the actual-trial scan certificate is recorded in
