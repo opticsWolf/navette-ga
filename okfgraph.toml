@@ -1,0 +1,4 @@
+bundle_root = "."
+
+[database]
+db_path = "research/kb.db"

@@ -1,0 +1,8 @@
+[toolchain]
+# The default build (bench feature off) compiles on current stable. This pin
+# exists for `--all-features`: kurobako -> rlua 0.17.1 does not compile on
+# rustc 1.100 (never-type / FromLuaMulti change). Revisit when kurobako or
+# rlua is updated.
+channel = "1.98.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

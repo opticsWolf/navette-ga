@@ -1,0 +1,52 @@
+[package]
+name = "navette-ga"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.90"
+license = "LGPL-3.0-or-later"
+description = "Genetic and evolutionary thin-film synthesis on top of the navette optical engine."
+repository = "https://github.com/opticsWolf/navette-ga"
+readme = "README.md"
+keywords = [
+    "genetic-algorithm",
+    "optimization",
+    "thin-film",
+    "optics",
+    "quality-diversity",
+]
+categories = ["science"]
+
+[features]
+default = []
+# kurobako -> rlua 0.17.1 does not compile on rustc 1.100 yet, so the proof
+# harness is opt-in. `cargo test --all-features` (toolchain 1.98) covers it.
+bench = ["dep:kurobako"]
+
+[dependencies]
+# Optics engine: owner crate, dependency only until A5 decides (never copied).
+# The path is used for a sibling checkout and is stripped on `cargo publish`;
+# when this package is added to Navette as a member, change it to `../navette`.
+navette = { version = "0.10.0", path = "../Navette/rust/navette", features = [
+    "opt-basin",
+] }
+# Evolutionary core (dependency in Phases 0-2; §1.1-gated copy source in Phase 3).
+genetic_algorithms = "=3.0.0"
+# QD archive base (dependency now; fork base for F1 MOME).
+symbios-genetics = "=0.2.3"
+# Pareto split-off.
+moors = "=0.2.11"
+# Lightweight surrogate loop: GP + EGO crates directly (E00 erratum 2026-11-10:
+# the umbrella `egobox` 1.0.1 crate is the PyO3 binding and does not build here).
+egobox-gp = "=0.37.2"
+egobox-ego = "=0.43.0"
+# Study layer.
+blackopt = "=0.1.0"
+optimizer = "=1.0.1"
+# Second pillar (pinned per E09 v2; prove before committing).
+genoxide = "=0.13.1"
+# Proof harness (feature `bench`).
+kurobako = { version = "=0.2.10", optional = true }
+
+[[bin]]
+name = "navette-ga"
+path = "src/main.rs"

@@ -1,0 +1,62 @@
+# ============================================================
+# navette-ga .gitignore
+# Source, manifests, docs and the provenance ledger are tracked.
+# Build outputs, vendored mirrors and the local research bundle are not.
+# ============================================================
+
+# ---------- Rust build output ----------
+/target/
+**/target/
+*.rlib
+*.rmeta
+
+# ---------- Vendored upstream mirrors (CREDIT.md has the commits) ----------
+# sources/ and genevo-0.7.1 live here; they carry their own .git directories
+# and are re-cloned when a Phase-3 copy is actually made.
+/vendor/
+
+# ---------- Local-only research bundle ----------
+# PDFs (~360 MB) stay on the workstation; docs/README.md indexes them.
+/research/papers/
+/research/artifacts/
+/research/probe/
+/research/kb.db
+/.gossamer_cache/
+
+# Keep the research directory's own README in the repository.
+!/research/README.md
+
+# ---------- Local-only license audit ----------
+# The detailed dependency/license audit stays on the workstation; the public
+# license statement is in README.md, CREDIT.md and COPYING.LESSER.
+/docs/licensing.md
+
+# ---------- Python / caches (research scripts) ----------
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# ---------- OS / editors ----------
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ---------- Logs / archives ----------
+*.log
+*.prof
+*.lprof
+*.7z
+*.zip
+*.tar.gz
+*.tgz
+*.rar
+*.bak
+*.orig
+*.rej
+*~
