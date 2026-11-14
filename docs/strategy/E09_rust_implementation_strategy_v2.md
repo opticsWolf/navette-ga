@@ -34,8 +34,9 @@ amendments are implemented by the owner, never requested.*
   local-path-only until a navette release carries them; `cargo publish` is
   expected to fail verification meanwhile.
 - **Remaining:** A2 (Jacobian/merit introspection), A4 (native bounds/grammar
-  API), Phase 2 of §2.4.1 (boundary needles, seed-or-pin, grammar truth table),
-  variable-length insertion/deletion operators, and the Phase 2 island driver.
+  API), Phase 2 of §2.4.1 (joint boundary needles, seed-or-pin,
+  `"*"`/multi-material), variable-length insertion/deletion operators, and the
+  Phase 2 island driver.
 
 ## 0. What navette already is (and why the strategy collapses around it)
 
@@ -204,8 +205,9 @@ matrix is stored. `check_grammar` also requires every concrete `H → N` insert
 pair to be legal in both directions in the decoder's adjacency grammar, and
 `run_recipe_a` calls that check before starting. Tests cover unknown/empty
 labels, assembled-edge compliance, edge-to-pin mapping, grammar
-bidirectionality, and a memetic scan restricted to the allowed needle
-material.
+bidirectionality, a memetic scan restricted to the allowed needle material,
+and a flat boundary needle accepted by the insert rules but rejected when the
+inner edge list excludes it.
 
 The remaining investigation has five parts:
 
@@ -221,18 +223,20 @@ The remaining investigation has five parts:
    of silently deriving a second grammar. Phase 2 still decides how the `"*"`
    rule and boundary needles at multi-material edges are checked; the
    grammar stays the decoder's single source of adjacency truth.
-3. **Boundary needles.** Enable `boundary_needles` and verify the staged
-   `scan`/`insert` apply `accepts_site` (flat) and `gap_accepts` (joint); a
-   polish or cleanup step must not move an edge off its list or create a
-   forbidden neighbour.
+3. **Boundary needles.** The flat staged `scan` is now covered: with
+   `boundary_needles` on, a boundary needle is accepted when both hosts allow
+   it and rejected when the edge list excludes it. The joint `gap_accepts`
+   path, multi-environment equivalence, and the no-edge-move assertion for
+   polish/cleanup remain.
 4. **Evidence.** Phase 1 covers label resolution, empty/unknown edge lists,
    assembled edges, edge-to-pin mapping, grammar bidirectionality, and a
-   restricted scan. Phase 2 adds `seed_edges` and contradiction diagnostics, a
-   multi-environment gap, equivalence with `run_needle_cycles` under the same
-   `NeedleRules`, and a diffusion-barrier / edge-layer filter as the acceptance
-   case; no-rules runs stay bit-identical.
-5. **Scope.** Phase 1 is complete. Phase 2 adds boundary needles, joint gaps,
-   the seed-or-pin decision, and the `"*"`/multi-material edge cases.
+   restricted scan, and a flat boundary needle filtered by host and edge rules.
+   Phase 2 adds `seed_edges` and contradiction diagnostics, a multi-environment
+   gap, equivalence with `run_needle_cycles` under the same `NeedleRules`, and
+   a diffusion-barrier / edge-layer filter as the acceptance case; no-rules
+   runs stay bit-identical.
+5. **Scope.** Phase 1 is complete. Phase 2 adds joint boundary needles, joint
+   gaps, the seed-or-pin decision, and the `"*"`/multi-material edge cases.
 
 **2.5 MOO split-off.** `moors` builders with fitness closures over the G1
 bridge; objectives (merit, N, total thickness, robustness perturbation,
@@ -416,7 +420,7 @@ stands on E00 picks.
 - **Phase 2 — Recipe B core (month):** heterogeneous islands/tribes under the
   §2.8.1 island policy (ring, k=10, one best migrant,
   best-replace-worst-if-better with legality repair), G4(a) needle-memetic,
-  Phase 2 of §2.4.1 (boundary needles, seed-or-pin, grammar truth table),
+  Phase 2 of §2.4.1 (joint boundary needles, seed-or-pin, `"*"`/multi-material),
   dynamic parsimony, moors split (S6), rung-3 pool, H0 control arm running in
   parallel (review G1/R6: if the control wins at equal compute, S2–S4 narrow
   to refinement machinery honestly). Exit: 40-layer filter + merit-vs-depth

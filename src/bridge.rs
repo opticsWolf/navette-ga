@@ -756,6 +756,86 @@ mod tests {
     }
 
     #[test]
+    fn boundary_needles_use_insert_rules_and_edge_lists() {
+        let spec = zero_reflectance_spec(0.0, 450.0);
+        let ev = evaluator(spec.clone());
+        let stack = fixed_stack(
+            vec![constant("H", 2.2, 40.0, 1), constant("L", 1.46, 40.0, 1)],
+            1,
+        );
+        let insert: navette::smatrix::synthesis::cycle::InsertRules = [
+            ("H".to_string(), vec!["G".to_string()]),
+            ("L".to_string(), vec!["G".to_string()]),
+        ]
+        .into_iter()
+        .collect();
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0, 1),
+            constant("substrate", 1.52, 0.0, 1),
+            vec![
+                constant("H", 2.2, 0.0, 1),
+                constant("L", 1.46, 0.0, 1),
+                constant("G", 1.8, 0.0, 1),
+            ],
+        )
+        .unwrap()
+        .with_boundary_rules(BoundaryRules {
+            insert: Some(insert.clone()),
+            ..BoundaryRules::default()
+        })
+        .unwrap();
+        let spectral = SpectralInputs::from_spec(&spec, &[Radians::ZERO], &[450.0]).unwrap();
+        let cfg = NeedleCycleConfig {
+            max_needles: 1,
+            scan_step_nm: 10.0,
+            boundary_needles: true,
+            ..NeedleCycleConfig::default()
+        };
+        let op = MemeticOperator::from_template(spectral, &template, cfg).unwrap();
+        let scan = op.scan(&ev, &stack).unwrap();
+        let boundary: Vec<_> = scan
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.site.boundary)
+            .collect();
+        assert!(!boundary.is_empty(), "{scan:?}");
+        assert!(
+            boundary
+                .iter()
+                .all(|candidate| candidate.material.as_ref() == "G"
+                    && candidate.site.film_idx == 2),
+            "{scan:?}"
+        );
+
+        let restricted = template
+            .with_boundary_rules(BoundaryRules {
+                insert: Some(insert),
+                outer: Some(vec!["H".to_string()]),
+                inner: Some(vec!["L".to_string()]),
+            })
+            .unwrap();
+        let mut stack = stack;
+        stack
+            .set_edge_materials(restricted.edge_materials().unwrap())
+            .unwrap();
+        let spectral = SpectralInputs::from_spec(&spec, &[Radians::ZERO], &[450.0]).unwrap();
+        let cfg = NeedleCycleConfig {
+            max_needles: 1,
+            scan_step_nm: 10.0,
+            boundary_needles: true,
+            ..NeedleCycleConfig::default()
+        };
+        let op = MemeticOperator::from_template(spectral, &restricted, cfg).unwrap();
+        let scan = op.scan(&ev, &stack).unwrap();
+        assert!(
+            scan.candidates
+                .iter()
+                .all(|candidate| !candidate.site.boundary),
+            "{scan:?}"
+        );
+    }
+
+    #[test]
     fn insert_rules_must_match_both_grammar_directions() {
         let template = StackTemplate::new(
             constant("air", 1.0, 0.0, 1),
