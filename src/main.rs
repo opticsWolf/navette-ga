@@ -8,7 +8,7 @@ fn main() {
         navette_ga::STATUS
     );
     println!(
-        "modules: decoder, bridge, engines, qd, study{}",
+        "modules: decoder, bridge, engines, qd, moors_split, study{}",
         if cfg!(feature = "bench") {
             ", bench"
         } else {

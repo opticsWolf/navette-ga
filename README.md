@@ -8,28 +8,32 @@ This is the working repository for the strategy set in
 decoding, islands/tribes, needle-memetic refinement, multi-objective splits,
 quality-diversity archives, and the study/proof layer around them.
 
-**Status:** Phase 2 in progress. `ga::decoder` (G2), the `ga::bridge` core
-(G1), the A1 memetic operator, the G3 material loader, and both Recipe A GA
-paths (single island and the Phase 2 ring) are implemented and tested. The
-Phase 1 exit artifact is recorded in
+**Status:** Phase 2 and the implementable Phase 3 modules are in place.
+`ga::decoder` (G2), the `ga::bridge` core (G1), the A1 memetic operator, the
+G3 material loader, both Recipe A GA paths (single island and the Phase 2
+ring), heterogeneous islands/tribes, static and ramped parsimony, and the
+terminal LM/needle finish are implemented and tested. The Phase 1 exit
+artifact is recorded in
 [`docs/studies/phase1_c00_ar.md`](docs/studies/phase1_c00_ar.md): a C00-class
-H/L AR over 400–900 nm with terminal LM/needle finish, Lamarckian write-back,
-and a zero-actual-improvement scan certificate. The GA runs `genetic_algorithms` over three random
-keys per layer, decodes with presence-coded variable length, assembles a
-navette `DesignStack`, and minimizes joint merit. Closed-form quarter-wave and
-V-coat checks pass, and the G9 micro-bench covers evaluate, LM, A1 scan, and
-scan+insert+polish. A1/A3 live on the local Navette `dev_ga` checkout. The
-bridge now carries navette's insert and edge-list boundary rules, maps
-single-material edges to decoder pins, and checks insert pairs against the
-adjacency grammar (E09 v2 §2.4.1 Phase 1), and verifies flat boundary needles
-against host and edge rules; single-material edges become pins, multi-material
-edges validate at assembly, and seeding is rejected. The Phase 2 island
-driver is in place (`run_recipe_a_islands`: ring, one best migrant capped at
-5%, best-replace-worst-if-better). Read-only joint gap acceptance, structural
-candidate enumeration, and transactional chosen-locus insertion are exposed
-through `joint_gap_accepts` / `joint_gap_sites` / `joint_gap_insert`; a spectral
-joint scan/polish run, joint `run_needle_cycles` equivalence, full
-multi-material joint runs, and A2/A4 remain.
+H/L AR over 400–900 nm with Lamarckian write-back and a zero-actual-improvement
+scan certificate.
+
+The boundary path now covers read-only joint gap acceptance, structural
+candidate enumeration, transactional chosen-locus insertion, the spectral
+joint scan/step/run, one-cycle joint equivalence with `run_needle_cycles`,
+cleanup edge preservation, and a two-step multi-material joint run on H/L/B
+with a fixed cover environment. A2 introspection (`ga-introspect` merit parts
+and the thickness residual Jacobian) and consumer-side A4 stack validation are
+exposed through the bridge/decoder. Phase 2/3 modules add the S4/F1 MOME
+archive and illuminated Recipe A run, the S6 `moors` split, the H0 control,
+I1 cross-island multi-parent crossover, the G7 campaign queue/pins/pruner,
+and the G8 kurobako problem/H0–H7 registry. Full suite: **64 tests**;
+`--all-features` includes the kurobako proof module.
+
+Limits are explicit: navette-native A4 (per-material bounds and the
+insert/migrate grammar hook), H6 screening/H7 seeded dispatch, and a
+production 40-layer merit-vs-depth bake remain. The ledger is
+[`docs/studies/phase2_phase3_ledger.md`](docs/studies/phase2_phase3_ledger.md).
 Publishing waits for a navette release containing A1/A3. The specification of
 record is
 [`E09_rust_implementation_strategy_v2.md`](docs/strategy/E09_rust_implementation_strategy_v2.md)
@@ -51,9 +55,10 @@ src/
   materials.rs             # G3: navette material library -> decoder pool/template
   bridge.rs                # G1/G4: fitness bridge, boundary rules, needle-memetic operator
   engines.rs               # S1-S3: Recipe A GA (fixed/VL) + island driver
-  qd.rs                    # S4/F1: MAP-Elites / MOME archive glue
-  study.rs                 # G7: blackopt/optimizer study wiring
-  bench.rs                 # G8/G9: kurobako problems + perf harness (feature)
+  qd.rs                    # S4/F1: MAP-Elites / MOME archive + illuminated run
+  moors_split.rs           # S6: moors non-dominated split
+  study.rs                 # G7: campaign queue/pins/pruner/importance
+  bench.rs                 # G8/G9: kurobako problem + H0-H7 registry (feature)
   main.rs                  # Recipe A/B binary scaffold
 examples/
   phase0_bench.rs          # G9: 61-wavelength evaluate/LM timing harness

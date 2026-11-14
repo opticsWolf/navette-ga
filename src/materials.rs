@@ -132,6 +132,61 @@ pub fn load_library(
         .collect())
 }
 
+/// Reorder a loaded library by an offline latent table.
+///
+/// This is the rung-3 boundary: the embedding is produced offline, and this
+/// function only validates and imports its coordinates. Every loaded material
+/// must have a finite, equal-length coordinate vector; the order is
+/// lexicographic on that vector, with the label as a deterministic tie-break.
+/// No coordinates means no rung-3 pool, never a silent fallback to rung 2.
+pub fn order_by_latent(
+    materials: &[LoadedMaterial],
+    latent: &BTreeMap<String, Vec<f64>>,
+) -> Result<Vec<LoadedMaterial>, String> {
+    if materials.is_empty() {
+        return Err("latent material order: the library is empty".into());
+    }
+    let mut dimension = None;
+    let mut ordered: Vec<(Vec<f64>, LoadedMaterial)> = Vec::with_capacity(materials.len());
+    for material in materials {
+        let coords = latent.get(&material.label).ok_or_else(|| {
+            format!(
+                "latent material order: no coordinates for {:?}",
+                material.label
+            )
+        })?;
+        if coords.is_empty() || coords.iter().any(|value| !value.is_finite()) {
+            return Err(format!(
+                "latent material order: {:?} has an empty or non-finite coordinate vector",
+                material.label
+            ));
+        }
+        if let Some(expected) = dimension {
+            if coords.len() != expected {
+                return Err(format!(
+                    "latent material order: {:?} has dimension {}, expected {expected}",
+                    material.label,
+                    coords.len()
+                ));
+            }
+        } else {
+            dimension = Some(coords.len());
+        }
+        ordered.push((coords.clone(), material.clone()));
+    }
+    ordered.sort_by(|(a, a_mat), (b, b_mat)| {
+        a.iter()
+            .zip(b)
+            .find_map(|(x, y)| {
+                let order = x.total_cmp(y);
+                (order != std::cmp::Ordering::Equal).then_some(order)
+            })
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a_mat.label.cmp(&b_mat.label))
+    });
+    Ok(ordered.into_iter().map(|(_, material)| material).collect())
+}
+
 /// Build the decoder pool in the loader's similarity order.
 pub fn decoder_pool(materials: &[LoadedMaterial]) -> Result<MaterialPool, String> {
     let pool = materials
@@ -205,6 +260,27 @@ mod tests {
         assert_eq!(pool.materials()[0].name(), "L");
         assert_eq!(pool.materials()[0].min_thickness_nm(), 10.0);
         assert_eq!(pool.materials()[1].max_thickness_nm(), 300.0);
+    }
+
+    #[test]
+    fn latent_order_requires_complete_coordinates() {
+        let materials = load_library(
+            &[table("H", 2.3), table("L", 1.45)],
+            &[400.0, 700.0],
+            &bounds(&[("H", 20.0, 300.0), ("L", 10.0, 200.0)]),
+        )
+        .unwrap();
+        let mut latent = BTreeMap::new();
+        latent.insert("H".to_string(), vec![1.0, 0.0]);
+        latent.insert("L".to_string(), vec![0.0, 1.0]);
+        let ordered = order_by_latent(&materials, &latent).unwrap();
+        assert_eq!(ordered[0].label, "L");
+        assert_eq!(ordered[1].label, "H");
+
+        latent.remove("L");
+        assert!(order_by_latent(&materials, &latent).is_err());
+        latent.insert("L".to_string(), vec![0.0]);
+        assert!(order_by_latent(&materials, &latent).is_err());
     }
 
     #[test]

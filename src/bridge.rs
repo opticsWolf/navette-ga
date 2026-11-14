@@ -19,8 +19,10 @@ use navette::smatrix::angle::Radians;
 use navette::smatrix::synthesis::config::ThinLayerPolicy;
 use navette::smatrix::synthesis::context::DesignContext;
 use navette::smatrix::synthesis::cycle::{
-    InsertRules, Insertion, MaterialPool, NeedleCycleConfig, NeedleRules,
+    joint_needle_scan as navette_joint_needle_scan, InsertRules, Insertion, MaterialPool,
+    NeedleCycleConfig, NeedleRules,
 };
+pub use navette::smatrix::synthesis::cycle::{JointNeedleCandidate, JointNeedleScan};
 use navette::smatrix::synthesis::environments::{CompiledEnvironments, Gap};
 use navette::smatrix::synthesis::evaluator::SmatrixContext;
 use navette::smatrix::synthesis::merit::{MeritSpec, SimCurves};
@@ -29,6 +31,123 @@ use navette::smatrix::synthesis::staged::{PolishReport, PolishScope};
 use navette::smatrix::synthesis::structure::{ClampReport, DesignStack, EdgeMaterials, LayerSpec};
 
 use crate::decoder::{AdjacencyGrammar, DecodedStack, MaterialPool as DecoderPool, Pins};
+
+/// A2/F2.3: the public spectral joint scan.
+///
+/// This is a read-only wrapper over navette's joint sweep. `ctx` must carry
+/// the K compiled environments; the returned candidate is the most negative
+/// ΣP over all admissible design and boundary sites. Nothing is inserted.
+pub fn joint_needle_scan(
+    ctx: &SmatrixContext,
+    design: &DesignStack,
+    spectral: &SpectralInputs,
+    pool: &MaterialPool,
+    cfg: &NeedleCycleConfig,
+) -> Result<JointNeedleScan, String> {
+    navette_joint_needle_scan(ctx, design, spectral, pool, cfg)
+}
+
+/// Apply one spectral joint candidate transactionally, then run the bounded
+/// LM polish. Boundary loci reuse [`joint_gap_insert`]; interior loci use
+/// navette's needle-seed insertion. A scan with no improving candidate is a
+/// no-op returning `None`.
+///
+/// This is the spectral joint step the Phase 2 driver composes. It does not
+/// run cleanup; that remains an explicit caller decision.
+pub fn joint_needle_step(
+    ctx: &mut SmatrixContext,
+    design: &mut DesignStack,
+    spectral: &SpectralInputs,
+    pool: &MaterialPool,
+    cfg: &NeedleCycleConfig,
+    seed_nm: f64,
+) -> Result<Option<JointNeedleCandidate>, String> {
+    if !seed_nm.is_finite() || seed_nm <= 0.0 {
+        return Err("joint needle seed thickness must be finite and positive".into());
+    }
+    let scan = joint_needle_scan(ctx, design, spectral, pool, cfg)?;
+    let Some(candidate) = scan.best else {
+        return Ok(None);
+    };
+    match candidate.site {
+        navette::smatrix::synthesis::cycle::JointSite::Boundary(gap) => {
+            let envs = ctx
+                .environments_mut()
+                .ok_or_else(|| "joint needle step: the context has no environments".to_string())?;
+            joint_gap_insert(envs, design, pool, gap, candidate.material, seed_nm)?;
+        }
+        navette::smatrix::synthesis::cycle::JointSite::Interior {
+            slot,
+            depth_into_layer_nm,
+        } => {
+            let mut film = pool
+                .get(candidate.material)
+                .ok_or_else(|| {
+                    format!(
+                        "joint needle step: material {} is outside the pool",
+                        candidate.material
+                    )
+                })?
+                .clone();
+            film.d_nm = seed_nm;
+            // Under K > 1 every structural move splits the shared design
+            // and every environment's template together. Doing only the
+            // design would leave the compiled routing at the old span count.
+            let envs = ctx
+                .environments()
+                .ok_or_else(|| "joint needle step: the context has no environments".to_string())?;
+            envs.split_design(design, slot, depth_into_layer_nm, &film)?;
+            ctx.environments_mut()
+                .ok_or_else(|| "joint needle step: the context lost its environments".to_string())?
+                .insert_seed(slot, depth_into_layer_nm, &film)?;
+        }
+    }
+    design.polish_needles(ctx, PolishScope::All)?;
+    Ok(Some(candidate))
+}
+
+/// Result of a spectral joint run.
+#[derive(Clone, Debug)]
+pub struct JointRunReport {
+    pub steps: Vec<JointNeedleCandidate>,
+    pub merit_before: f64,
+    pub merit_after: f64,
+}
+
+/// Run up to `max_steps` spectral joint insert-and-polish steps.
+///
+/// This is the joint analogue of the staged flat loop, not a second macro
+/// loop: each step re-scans the updated shared design, inserts one candidate
+/// with [`joint_needle_step`], and stops when no candidate improves. Cleanup
+/// is deliberately left to the caller so an edge-list assertion can decide
+/// whether a merge is allowed.
+pub fn run_joint_needle_steps(
+    ctx: &mut SmatrixContext,
+    design: &mut DesignStack,
+    spectral: &SpectralInputs,
+    pool: &MaterialPool,
+    cfg: &NeedleCycleConfig,
+    seed_nm: f64,
+    max_steps: usize,
+) -> Result<JointRunReport, String> {
+    if max_steps == 0 {
+        return Err("joint needle run needs max_steps >= 1".into());
+    }
+    let merit_before = ctx.evaluate_merit(design)?;
+    let mut steps = Vec::new();
+    for _ in 0..max_steps {
+        let Some(candidate) = joint_needle_step(ctx, design, spectral, pool, cfg, seed_nm)? else {
+            break;
+        };
+        steps.push(candidate);
+    }
+    let merit_after = ctx.evaluate_merit(design)?;
+    Ok(JointRunReport {
+        steps,
+        merit_before,
+        merit_after,
+    })
+}
 
 /// May a needle of pool entry `needle` sit on the joint boundary locus
 /// `gap` of a multi-environment design?
@@ -435,6 +554,26 @@ impl Default for EvaluatorOptions {
     }
 }
 
+/// A2: one target's contribution to the scalar merit.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MeritPart {
+    pub target_index: usize,
+    pub merit: f64,
+}
+
+/// A2: the analytic thickness residual Jacobian at one design.
+///
+/// `values` is row-major `rows × cols`. A column is one LM free-thickness
+/// parameter; `film_rows[col]` is the film row the parameter starts at. The
+/// matrix prices thickness moves, not insertion positions.
+#[derive(Clone, Debug, PartialEq)]
+pub struct JacobianReport {
+    pub values: Vec<f64>,
+    pub rows: usize,
+    pub cols: usize,
+    pub film_rows: Vec<usize>,
+}
+
 /// A fixed spectral/angular problem plus the navette synthesis context.
 ///
 /// One evaluator is reused for a whole GA run. `evaluate` is pure (no stack
@@ -542,6 +681,80 @@ impl FitnessEvaluator {
 
     pub fn simulate(&self, stack: &DesignStack) -> Result<SimCurves, String> {
         self.ctx.simulate(stack)
+    }
+
+    /// A2: per-target merit parts for one stack.
+    pub fn merit_parts(&self, stack: &DesignStack) -> Result<Vec<MeritPart>, String> {
+        Ok(self
+            .ctx
+            .merit_parts(stack)?
+            .into_iter()
+            .map(|(target_index, merit)| MeritPart {
+                target_index,
+                merit,
+            })
+            .collect())
+    }
+
+    /// A2: the analytic thickness residual Jacobian, or `None` when the spec
+    /// cannot take the analytic path.
+    pub fn thickness_residual_jacobian(
+        &self,
+        stack: &DesignStack,
+    ) -> Result<Option<JacobianReport>, String> {
+        Ok(self
+            .ctx
+            .thickness_residual_jacobian(stack)?
+            .map(|(values, rows, cols, film_rows)| JacobianReport {
+                values,
+                rows,
+                cols,
+                film_rows,
+            }))
+    }
+
+    /// A2/F2.3: read-only spectral joint scan on this context's environments.
+    pub fn joint_needle_scan(
+        &self,
+        design: &DesignStack,
+        spectral: &SpectralInputs,
+        pool: &MaterialPool,
+        cfg: &NeedleCycleConfig,
+    ) -> Result<JointNeedleScan, String> {
+        joint_needle_scan(&self.ctx, design, spectral, pool, cfg)
+    }
+
+    /// A2/F2.3: apply one spectral joint candidate and polish.
+    pub fn joint_needle_step(
+        &mut self,
+        design: &mut DesignStack,
+        spectral: &SpectralInputs,
+        pool: &MaterialPool,
+        cfg: &NeedleCycleConfig,
+        seed_nm: f64,
+    ) -> Result<Option<JointNeedleCandidate>, String> {
+        joint_needle_step(&mut self.ctx, design, spectral, pool, cfg, seed_nm)
+    }
+
+    /// A2/F2.3: run a bounded spectral joint insertion loop.
+    pub fn run_joint_needle_steps(
+        &mut self,
+        design: &mut DesignStack,
+        spectral: &SpectralInputs,
+        pool: &MaterialPool,
+        cfg: &NeedleCycleConfig,
+        seed_nm: f64,
+        max_steps: usize,
+    ) -> Result<JointRunReport, String> {
+        run_joint_needle_steps(
+            &mut self.ctx,
+            design,
+            spectral,
+            pool,
+            cfg,
+            seed_nm,
+            max_steps,
+        )
     }
 
     pub fn context(&self) -> &SmatrixContext {
@@ -863,6 +1076,22 @@ mod tests {
     }
 
     #[test]
+    fn merit_parts_sum_to_merit_and_jacobian_has_one_column_per_free_film() {
+        let spec = zero_reflectance_spec(0.0, 550.0);
+        let ev = evaluator(spec);
+        let stack = fixed_stack(vec![constant("H", 2.2, 40.0, 1)], 1);
+        let merit = ev.evaluate(&stack).unwrap();
+        let parts = ev.merit_parts(&stack).unwrap();
+        assert_eq!(parts.len(), 1);
+        assert!((parts.iter().map(|part| part.merit).sum::<f64>() - merit).abs() < 1e-12);
+        let jacobian = ev.thickness_residual_jacobian(&stack).unwrap().unwrap();
+        assert_eq!(jacobian.cols, 1);
+        assert_eq!(jacobian.film_rows, vec![0]);
+        assert_eq!(jacobian.values.len(), jacobian.rows);
+        assert!(jacobian.rows > 0);
+    }
+
+    #[test]
     fn staged_cycle_matches_run_needle_cycles_for_one_flat_insertion() {
         use navette::smatrix::synthesis::cycle::run_needle_cycles;
 
@@ -1060,6 +1289,154 @@ mod tests {
         assert_eq!(inserted[1].films()[2].d_nm, 25.0);
         assert_eq!(inserted[1].films()[2].material.as_ref(), "B");
         assert!(!joint_gap_accepts(&envs, &inserted, &pool, insertion_gap, g).unwrap());
+
+        // The spectral scan is a read-only sibling of the structural one.
+        let (spectral_envs, spectral_pool, _) = build_environments(&request, &[550.0]).unwrap();
+        let mut spectral_spec = zero_reflectance_spec(0.0, 550.0);
+        spectral_spec.set_n_envs(2).unwrap();
+        let spectral =
+            SpectralInputs::from_spec(&spectral_spec, &[Radians::ZERO], &[550.0]).unwrap();
+        let mut spectral_ev = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            spectral_spec,
+            EvaluatorOptions::default(),
+        )
+        .unwrap();
+        spectral_ev.context_mut().envs = Some(Arc::new(spectral_envs.clone()));
+        let before = spectral_envs.stacks()[0].clone();
+        let scan = joint_needle_scan(
+            spectral_ev.context(),
+            &spectral_envs.stacks()[0],
+            &spectral,
+            &spectral_pool,
+            &NeedleCycleConfig {
+                boundary_needles: true,
+                max_needles: 1,
+                scan_step_nm: 10.0,
+                ..NeedleCycleConfig::default()
+            },
+        )
+        .unwrap();
+        assert!(scan.sites > 0);
+        assert_eq!(
+            spectral_envs.stacks()[0].films().len(),
+            before.films().len()
+        );
+
+        let mut step_design = spectral_envs.stacks()[0].clone();
+        let mut step_ev = spectral_ev.clone();
+        let step = joint_needle_step(
+            step_ev.context_mut(),
+            &mut step_design,
+            &spectral,
+            &spectral_pool,
+            &NeedleCycleConfig {
+                boundary_needles: true,
+                max_needles: 1,
+                scan_step_nm: 10.0,
+                ..NeedleCycleConfig::default()
+            },
+            20.0,
+        )
+        .unwrap();
+        assert!(step.is_some(), "spectral joint step found no candidate");
+        assert!(step_design.films().len() > before.films().len());
+        let grown = step_ev
+            .context()
+            .environments()
+            .unwrap()
+            .expand(&step_design)
+            .unwrap();
+        assert_eq!(grown.len(), 2);
+
+        let edge_materials = |stack: &DesignStack| {
+            (
+                stack.films().first().map(|film| film.material.clone()),
+                stack.films().last().map(|film| film.material.clone()),
+            )
+        };
+        let edges_before = edge_materials(&step_design);
+        let mut cleaned = step_design.clone();
+        let mut cleaned_ev = step_ev.clone();
+        cleaned
+            .cleanup_needles(
+                cleaned_ev.context_mut(),
+                navette::smatrix::synthesis::staged::CleanupOptions {
+                    min_thickness_nm: Some(1.0),
+                    max_removals: Some(0),
+                    reoptimize: false,
+                },
+            )
+            .unwrap();
+        assert_eq!(edge_materials(&cleaned), edges_before);
+
+        let mut run_design = before.clone();
+        let mut run_ev = spectral_ev.clone();
+        let report = run_ev
+            .run_joint_needle_steps(
+                &mut run_design,
+                &spectral,
+                &spectral_pool,
+                &NeedleCycleConfig {
+                    boundary_needles: true,
+                    max_needles: 2,
+                    scan_step_nm: 10.0,
+                    ..NeedleCycleConfig::default()
+                },
+                20.0,
+                2,
+            )
+            .unwrap();
+        assert!(!report.steps.is_empty());
+        assert!(report.merit_before.is_finite());
+        assert!(report.merit_after.is_finite());
+
+        // One joint macro cycle and one staged joint step must agree after
+        // the same initial refinement.
+        use navette::smatrix::synthesis::cycle::run_needle_cycles;
+        let one = NeedleCycleConfig {
+            boundary_needles: true,
+            max_needles: 1,
+            scan_step_nm: 10.0,
+            ..NeedleCycleConfig::default()
+        };
+        let mut macro_design = before.clone();
+        let mut macro_ev = spectral_ev.clone();
+        run_needle_cycles(
+            macro_ev.context_mut(),
+            &mut macro_design,
+            &spectral,
+            &spectral_pool,
+            &one,
+        )
+        .unwrap();
+
+        let mut staged_joint = before.clone();
+        let mut staged_joint_ev = spectral_ev.clone();
+        staged_joint_ev.refine(&mut staged_joint).unwrap();
+        staged_joint_ev
+            .run_joint_needle_steps(
+                &mut staged_joint,
+                &spectral,
+                &spectral_pool,
+                &one,
+                one.needle_seed_thickness_nm,
+                1,
+            )
+            .unwrap();
+        assert_eq!(staged_joint.films().len(), macro_design.films().len());
+        for (a, b) in staged_joint.films().iter().zip(macro_design.films()) {
+            let base = |film: &navette::smatrix::synthesis::structure::LayerSpec| {
+                film.material
+                    .split('#')
+                    .next()
+                    .unwrap_or(&film.material)
+                    .to_string()
+            };
+            assert_eq!(base(a), base(b));
+            assert!((a.d_nm - b.d_nm).abs() < 1e-6, "{} vs {}", a.d_nm, b.d_nm);
+        }
     }
 
     #[test]

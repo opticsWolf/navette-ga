@@ -34,6 +34,12 @@ documents:
   "Depend" stays a dependency permanently.
 - The `genevo` 0.7 backbone is adopted into E09 v2's Phase 3 as the
   `ga::engines` assembly skeleton — no longer an E10-only decision (§2).
+- **Gate decision (2026-11-15): not opened.** The dependency-only VL path,
+  ring/tribe wrapper, MOME archive, and `moors` split landed without mutating
+  any dependency source; no copied file entered `src/`, so `CREDIT.md` gained
+  no copy provenance. The three copies remain available if a measured
+  dependency limitation appears; the `symbios` fork is not needed while the
+  per-cell front is owned by `ga::qd`.
 
 ## 1. License buckets (latest non-yanked version each)
 

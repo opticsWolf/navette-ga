@@ -10,8 +10,9 @@
 //! | [`bridge`] | G1/G4 | genome → navette [`DesignStack`] → merit, boundary rules, needle-memetic operator |
 //! | [`engines`] | S1–S3 | Recipe A GA, island/tribe backbone, VL operators |
 //! | [`materials`] | G3 | navette material library → decoder pool + stack template |
-//! | [`qd`] | S4/F1 | MAP-Elites / CVT archive glue, MOME per-bin fronts |
-//! | [`study`] | G7 | blackopt/optimizer study wiring |
+//! | [`qd`] | S4/F1 | MAP-Elites / MOME archive, illuminated run, gradient descriptors |
+//! | [`moors_split`] | S6 | `moors` non-dominated split-off |
+//! | [`study`] | G7 | campaign queue, pins, pruner, importance |
 //! | `bench` | G8/G9 | kurobako problems and performance harness (feature `bench`) |
 //!
 //! The strategy of record is `docs/strategy/E09_rust_implementation_strategy_v2.md`
@@ -25,6 +26,7 @@ pub mod bridge;
 pub mod decoder;
 pub mod engines;
 pub mod materials;
+pub mod moors_split;
 pub mod qd;
 pub mod study;
 
@@ -36,4 +38,4 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The current implementation phase.
 pub const STATUS: &str =
-    "Phase 2: Recipe A islands + boundary-rule pass-through (A1/A3 on navette dev_ga)";
+    "Phase 2 complete + Phase 3 modules: joint/spectral needles, A2/A4 consumer, MOME, I1, study, kurobako";

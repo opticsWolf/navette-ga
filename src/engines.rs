@@ -31,6 +31,7 @@ use rand::Rng;
 
 use crate::bridge::{FitnessEvaluator, MemeticOperator, StackTemplate};
 use crate::decoder::{AdjacencyGrammar, DecodedStack, Decoder, Genome, LayerGene};
+use crate::qd::{ArchiveConfig, MomeArchive};
 
 /// One gene: the three random keys of one layer.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -249,6 +250,61 @@ impl Default for IslandRecipeConfig {
     }
 }
 
+/// H0 control arm: needle-plus-refinement multi-start.
+///
+/// This is the classical competitor E09 v2 §2.7 schedules first. Each start is
+/// a random stack, a bounded LM refinement, an optional memetic needle step,
+/// and a second refinement. The best start wins. It shares the decoder and
+/// evaluator with Recipe A, so a control victory is measured on the same
+/// physics and the same compute unit, not on a different problem.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct H0Config {
+    pub starts: usize,
+    pub max_layers: usize,
+    pub mutation_sigma: f64,
+    pub needle_steps: usize,
+    pub seed: Option<u64>,
+}
+
+impl Default for H0Config {
+    fn default() -> Self {
+        Self {
+            starts: 8,
+            max_layers: 12,
+            mutation_sigma: 0.2,
+            needle_steps: 1,
+            seed: None,
+        }
+    }
+}
+
+/// I1 experiment: cross-island multi-parent crossover.
+///
+/// This is deliberately separate from the default ring migration policy. At
+/// each migration event, every destination receives one child assembled from
+/// `parents` distinct source islands; the child replaces the destination's
+/// worst only when its merit is strictly better. The experiment reports the
+/// normal ring fields plus the number of accepted crossovers and a material-mix
+/// divergence (0 = homogenised islands, 1 = disjoint mixes).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct I1Config {
+    pub islands: usize,
+    pub migration_interval: usize,
+    /// Number of distinct source islands per child. Must be at least 2 and
+    /// strictly less than `islands` so the destination is not a parent.
+    pub parents: usize,
+}
+
+impl Default for I1Config {
+    fn default() -> Self {
+        Self {
+            islands: 4,
+            migration_interval: 10,
+            parents: 2,
+        }
+    }
+}
+
 /// True variable-length Recipe A configuration.
 ///
 /// Unlike [`RecipeAConfig`], the chromosome is not a fixed-width presence-coded
@@ -382,6 +438,14 @@ pub struct HeterogeneousTribeConfig {
     pub constraints: Vec<TribeConstraint>,
 }
 
+/// Result of an illuminated Recipe A run.
+#[derive(Clone, Debug)]
+pub struct IlluminatedResult {
+    pub best: RecipeAResult,
+    pub archive: MomeArchive,
+    pub generations: usize,
+}
+
 /// Best design plus the policy bookkeeping from an island run.
 #[derive(Clone, Debug)]
 pub struct IslandRecipeResult {
@@ -392,6 +456,12 @@ pub struct IslandRecipeResult {
     pub migrations: usize,
     /// Effective migrants per island per event (after the 5% cap).
     pub migrants_per_event: usize,
+    /// Cross-island multi-parent crossover children accepted by I1. Zero for
+    /// the default migrate-then-mate-locally policy.
+    pub crossovers: usize,
+    /// Mean pairwise L1 distance between island material histograms, in
+    /// `[0, 1]`; zero means every island has the same material mix.
+    pub homogenisation: f64,
 }
 
 fn validate_recipe_a(cfg: &RecipeAConfig) -> Result<(), String> {
@@ -523,6 +593,285 @@ fn migrate_islands(populations: &mut [Population<LayerChromosome>], count: usize
     populations.len()
 }
 
+/// One child from `parents` distinct source islands, round-robin by gene.
+///
+/// The child is evaluated through the same decoder/template/evaluator as the
+/// GA, so an illegal recombination is discarded exactly like an illegal
+/// mutation. The fitter-than-worst replacement is the experiment's only
+/// selection step; no destination parent enters the child.
+fn cross_island_child(
+    source: &[&Population<LayerChromosome>],
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    mutation_sigma: f64,
+) -> Option<LayerChromosome> {
+    let width = source
+        .iter()
+        .filter_map(|population| population.chromosomes.first().map(|c| c.dna().len()))
+        .max()?;
+    if width == 0 {
+        return None;
+    }
+    let mut dna = Vec::with_capacity(width);
+    for position in 0..width {
+        let population = source[position % source.len()];
+        let chromosome = population
+            .chromosomes
+            .get(position % population.chromosomes.len())?;
+        let gene = chromosome.dna().get(position % chromosome.dna().len())?;
+        dna.push(*gene);
+    }
+    let mut rng = make_rng();
+    for gene in &mut dna {
+        gene.material = wrap01(gene.material + gaussian(&mut rng) * mutation_sigma);
+        gene.thickness = wrap01(gene.thickness + gaussian(&mut rng) * mutation_sigma);
+        gene.presence = wrap01(gene.presence + gaussian(&mut rng) * mutation_sigma);
+    }
+    let mut child = LayerChromosome::from_dna(dna);
+    let genome = child.to_genome();
+    let decoded = decoder.decode(&genome).ok()?;
+    let stack = template.assemble(&decoded).ok()?;
+    let merit = evaluator.evaluate(&stack).ok()?;
+    if !merit.is_finite() {
+        return None;
+    }
+    child.set_fitness(merit);
+    Some(child)
+}
+
+/// Replace each destination's worst with one cross-island child. Returns the
+/// number of accepted children.
+fn migrate_i1(
+    populations: &mut [Population<LayerChromosome>],
+    parents: usize,
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    mutation_sigma: f64,
+) -> usize {
+    if populations.len() < 3 || parents < 2 || parents >= populations.len() {
+        return 0;
+    }
+    let mut accepted = 0;
+    for dest in 0..populations.len() {
+        let source_indices: Vec<usize> = (1..=parents)
+            .map(|offset| (dest + offset) % populations.len())
+            .collect();
+        let sources: Vec<&Population<LayerChromosome>> = source_indices
+            .iter()
+            .map(|&index| &populations[index])
+            .collect();
+        let Some(child) =
+            cross_island_child(&sources, decoder, template, evaluator, mutation_sigma)
+        else {
+            continue;
+        };
+        let Some(worst_index) = (0..populations[dest].chromosomes.len()).max_by(|&a, &b| {
+            populations[dest].chromosomes[a]
+                .fitness()
+                .total_cmp(&populations[dest].chromosomes[b].fitness())
+        }) else {
+            continue;
+        };
+        if child.fitness() < populations[dest].chromosomes[worst_index].fitness() {
+            populations[dest].chromosomes[worst_index] = child;
+            accepted += 1;
+        }
+    }
+    accepted
+}
+
+/// Mean pairwise L1 distance between island material histograms, in `[0, 1]`.
+fn island_divergence(populations: &[Population<LayerChromosome>], pool_len: usize) -> f64 {
+    if populations.len() < 2 || pool_len == 0 {
+        return 0.0;
+    }
+    let histogram = |population: &Population<LayerChromosome>| -> Vec<f64> {
+        let mut bins = vec![0.0; pool_len];
+        let mut total = 0.0;
+        for chromosome in &population.chromosomes {
+            for gene in chromosome.dna() {
+                if gene.presence < 0.5 {
+                    continue;
+                }
+                let index = ((gene.material.rem_euclid(1.0) * pool_len as f64).floor() as usize)
+                    .min(pool_len - 1);
+                bins[index] += 1.0;
+                total += 1.0;
+            }
+        }
+        if total > 0.0 {
+            for bin in &mut bins {
+                *bin /= total;
+            }
+        }
+        bins
+    };
+    let histograms: Vec<Vec<f64>> = populations.iter().map(histogram).collect();
+    let mut sum = 0.0;
+    let mut pairs = 0usize;
+    for i in 0..histograms.len() {
+        for j in (i + 1)..histograms.len() {
+            let distance = histograms[i]
+                .iter()
+                .zip(&histograms[j])
+                .map(|(a, b)| (a - b).abs())
+                .sum::<f64>()
+                * 0.5;
+            sum += distance;
+            pairs += 1;
+        }
+    }
+    if pairs == 0 {
+        0.0
+    } else {
+        sum / pairs as f64
+    }
+}
+
+/// Run the H0 control: independent random starts, LM, and optional needle.
+///
+/// The returned [`RecipeAResult`] uses the same shape as a GA run, so the
+/// comparison harness can report it without a second result type.
+pub fn run_h0_control(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &mut FitnessEvaluator,
+    cfg: &H0Config,
+    operator: Option<&MemeticOperator>,
+) -> Result<RecipeAResult, String> {
+    if cfg.starts == 0 {
+        return Err("H0 needs at least one start".into());
+    }
+    if cfg.max_layers == 0 {
+        return Err("H0 needs max_layers >= 1".into());
+    }
+    if !cfg.mutation_sigma.is_finite() || cfg.mutation_sigma <= 0.0 {
+        return Err("H0 mutation_sigma must be finite and positive".into());
+    }
+    template.check_grammar(decoder.pool(), decoder.grammar())?;
+    set_seed(cfg.seed);
+    let mut best: Option<(
+        f64,
+        Genome,
+        DecodedStack,
+        navette::smatrix::synthesis::structure::DesignStack,
+    )> = None;
+    for _ in 0..cfg.starts {
+        let mut rng = make_rng();
+        let genome = Genome::from(
+            (0..cfg.max_layers)
+                .map(|_| {
+                    let gene = KeyGene::random(&mut rng);
+                    LayerGene::new(gene.material, gene.thickness, gene.presence)
+                })
+                .collect::<Vec<_>>(),
+        );
+        let decoded = match decoder.decode(&genome) {
+            Ok(decoded) => decoded,
+            Err(_) => continue,
+        };
+        let mut stack = match template.assemble(&decoded) {
+            Ok(stack) => stack,
+            Err(_) => continue,
+        };
+        evaluator.refine(&mut stack)?;
+        if let Some(operator) = operator {
+            operator.apply(evaluator, &mut stack, cfg.needle_steps)?;
+            evaluator.refine(&mut stack)?;
+        }
+        let merit = evaluator.evaluate(&stack)?;
+        if merit.is_finite() && best.as_ref().is_none_or(|(b, ..)| merit < *b) {
+            best = Some((merit, genome, decoded, stack));
+        }
+    }
+    let (merit, best_genome, decoded, stack) =
+        best.ok_or_else(|| "H0 found no legal design".to_string())?;
+    Ok(RecipeAResult {
+        best_genome,
+        decoded,
+        stack,
+        merit,
+        generations: 1,
+    })
+}
+
+/// Run Recipe A while illuminating a MOME archive with every legal member of
+/// every generation.
+///
+/// This is the Phase 2 S4-lite path: the archive does not steer selection yet,
+/// but it records the merit-vs-depth/thickness map from the same GA run. The
+/// selection remains the ordinary Recipe A engine, so the map cannot be
+/// mistaken for a quality-diversity search.
+pub fn run_recipe_a_illuminated(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    cfg: &RecipeAConfig,
+    archive_cfg: ArchiveConfig,
+) -> Result<IlluminatedResult, String> {
+    validate_recipe_a(cfg)?;
+    template.check_grammar(decoder.pool(), decoder.grammar())?;
+    let mut archive = MomeArchive::new(archive_cfg)?;
+    let mut population = initial_population(cfg, cfg.seed);
+
+    for generation in 0..cfg.generations {
+        let seed = cfg
+            .seed
+            .map(|base| base.wrapping_add((generation as u64).wrapping_mul(1009).wrapping_add(7)));
+        let mut ga = build_recipe_a_ga(
+            cfg,
+            decoder,
+            template,
+            evaluator,
+            Some(population),
+            1,
+            seed,
+            None,
+        )?;
+        ga.run().map_err(|e| e.to_string())?;
+        population = ga.population.clone();
+        for chromosome in &population.chromosomes {
+            let genome = chromosome.to_genome();
+            let Ok(decoded) = decoder.decode(&genome) else {
+                continue;
+            };
+            let Ok(stack) = template.assemble(&decoded) else {
+                continue;
+            };
+            if let Ok(merit) = evaluator.evaluate(&stack) {
+                let _ = archive.insert_stack(merit, stack);
+            }
+        }
+    }
+
+    let best = population
+        .chromosomes
+        .iter()
+        .min_by(|a, b| a.fitness().total_cmp(&b.fitness()))
+        .cloned()
+        .ok_or_else(|| "illuminated Recipe A produced an empty population".to_string())?;
+    if !best.fitness().is_finite() {
+        return Err("illuminated Recipe A found no legal design".into());
+    }
+    let best_genome = best.to_genome();
+    let decoded = decoder.decode(&best_genome).map_err(|e| e.to_string())?;
+    let stack = template.assemble(&decoded)?;
+    let merit = evaluator.evaluate(&stack)?;
+    Ok(IlluminatedResult {
+        best: RecipeAResult {
+            best_genome,
+            decoded,
+            stack,
+            merit,
+            generations: cfg.generations,
+        },
+        archive,
+        generations: cfg.generations,
+    })
+}
+
 /// Run Recipe A: single-island GA over random keys → decoder → navette merit.
 ///
 /// `decoder`, `template` and `evaluator` are cloned into the fitness closure,
@@ -572,6 +921,7 @@ pub fn run_recipe_a(
 /// dependency's unconditional `BestReplaceWorst` policy. A seeded run is
 /// reproducible because every island and generation gets its own derived
 /// RNG seed.
+#[allow(clippy::too_many_arguments)]
 fn run_recipe_a_islands_with_strategies(
     decoder: &Decoder,
     template: &StackTemplate,
@@ -580,6 +930,7 @@ fn run_recipe_a_islands_with_strategies(
     islands: &IslandRecipeConfig,
     strategies: Option<&[IslandStrategy]>,
     constraints: Option<&[TribeConstraint]>,
+    i1: Option<&I1Config>,
 ) -> Result<IslandRecipeResult, String> {
     validate_recipe_a(cfg)?;
     if let Some(strategies) = strategies {
@@ -597,6 +948,17 @@ fn run_recipe_a_islands_with_strategies(
     if islands.migration_count == 0 {
         return Err("island Recipe A migration_count must be >= 1".into());
     }
+    if let Some(i1) = i1 {
+        if i1.islands != islands.islands {
+            return Err(format!(
+                "I1: {} islands in the policy but {} in the experiment",
+                islands.islands, i1.islands
+            ));
+        }
+        if i1.islands < 3 || i1.parents < 2 || i1.parents >= i1.islands {
+            return Err("I1 needs at least 3 islands and 2 <= parents < islands".into());
+        }
+    }
     template.check_grammar(decoder.pool(), decoder.grammar())?;
 
     let cap = ((cfg.population_size as f64) * 0.05).floor().max(1.0) as usize;
@@ -610,6 +972,7 @@ fn run_recipe_a_islands_with_strategies(
         })
         .collect();
     let mut migrations = 0;
+    let mut crossovers = 0;
 
     for generation in 0..cfg.generations {
         for (island, population) in populations.iter_mut().enumerate() {
@@ -639,10 +1002,26 @@ fn run_recipe_a_islands_with_strategies(
             *population = ga.population.clone();
         }
         if (generation + 1) % islands.migration_interval == 0 {
-            migrations += migrate_islands(&mut populations, migrants_per_event);
+            migrations += populations.len();
+            match i1 {
+                Some(i1) => {
+                    crossovers += migrate_i1(
+                        &mut populations,
+                        i1.parents,
+                        decoder,
+                        template,
+                        evaluator,
+                        cfg.mutation_sigma,
+                    );
+                }
+                None => {
+                    migrate_islands(&mut populations, migrants_per_event);
+                }
+            }
         }
     }
 
+    let homogenisation = island_divergence(&populations, decoder.pool().len());
     let best = populations
         .iter()
         .flat_map(|population| population.chromosomes.iter())
@@ -680,6 +1059,8 @@ fn run_recipe_a_islands_with_strategies(
         island_bests,
         migrations,
         migrants_per_event,
+        crossovers,
+        homogenisation,
     })
 }
 
@@ -896,6 +1277,7 @@ pub fn run_recipe_a_tribes(
         &tribes.islands,
         Some(&tribes.strategies),
         Some(&tribes.constraints),
+        None,
     )
 }
 
@@ -907,7 +1289,38 @@ pub fn run_recipe_a_islands(
     cfg: &RecipeAConfig,
     islands: &IslandRecipeConfig,
 ) -> Result<IslandRecipeResult, String> {
-    run_recipe_a_islands_with_strategies(decoder, template, evaluator, cfg, islands, None, None)
+    run_recipe_a_islands_with_strategies(
+        decoder, template, evaluator, cfg, islands, None, None, None,
+    )
+}
+
+/// Run the I1 cross-island multi-parent experiment.
+///
+/// This is the same ring and the same per-generation advance as
+/// [`run_recipe_a_islands`]; only the migration event differs. The result's
+/// `crossovers` and `homogenisation` fields are the experiment readout.
+pub fn run_recipe_a_i1(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    cfg: &RecipeAConfig,
+    i1: &I1Config,
+) -> Result<IslandRecipeResult, String> {
+    let islands = IslandRecipeConfig {
+        islands: i1.islands,
+        migration_interval: i1.migration_interval,
+        migration_count: 1,
+    };
+    run_recipe_a_islands_with_strategies(
+        decoder,
+        template,
+        evaluator,
+        cfg,
+        &islands,
+        None,
+        None,
+        Some(i1),
+    )
 }
 
 /// Run Recipe A on the ring with a per-island mutation/selection strategy.
@@ -927,6 +1340,7 @@ pub fn run_recipe_a_heterogeneous_islands(
         &heterogeneous.islands,
         Some(&heterogeneous.strategies),
         None,
+        None,
     )
 }
 
@@ -938,7 +1352,9 @@ pub fn run_recipe_a_vl_islands(
     cfg: &VlRecipeAConfig,
     islands: &IslandRecipeConfig,
 ) -> Result<IslandRecipeResult, String> {
-    run_recipe_a_vl_islands_with_strategies(decoder, template, evaluator, cfg, islands, None, None)
+    run_recipe_a_vl_islands_with_strategies(
+        decoder, template, evaluator, cfg, islands, None, None, None,
+    )
 }
 
 /// Run variable-length Recipe A on the ring with a per-island strategy.
@@ -957,6 +1373,7 @@ pub fn run_recipe_a_vl_heterogeneous_islands(
         cfg,
         &heterogeneous.islands,
         Some(&heterogeneous.strategies),
+        None,
         None,
     )
 }
@@ -977,6 +1394,7 @@ pub fn run_recipe_a_vl_tribes(
         &tribes.islands,
         Some(&tribes.strategies),
         Some(&tribes.constraints),
+        None,
     )
 }
 
@@ -1224,6 +1642,7 @@ pub fn run_recipe_a_vl_ramp(
 /// delete genes. Migration is still host-independent: a legal variable-length
 /// migrant is cloned into the destination and the next generation's crossover
 /// pads/trims it as needed.
+#[allow(clippy::too_many_arguments)]
 fn run_recipe_a_vl_islands_with_strategies(
     decoder: &Decoder,
     template: &StackTemplate,
@@ -1232,6 +1651,7 @@ fn run_recipe_a_vl_islands_with_strategies(
     islands: &IslandRecipeConfig,
     strategies: Option<&[IslandStrategy]>,
     constraints: Option<&[TribeConstraint]>,
+    i1: Option<&I1Config>,
 ) -> Result<IslandRecipeResult, String> {
     validate_vl_recipe_a(cfg)?;
     if let Some(strategies) = strategies {
@@ -1249,6 +1669,17 @@ fn run_recipe_a_vl_islands_with_strategies(
     if islands.migration_count == 0 {
         return Err("island Recipe A migration_count must be >= 1".into());
     }
+    if let Some(i1) = i1 {
+        if i1.islands != islands.islands {
+            return Err(format!(
+                "I1: {} islands in the policy but {} in the experiment",
+                islands.islands, i1.islands
+            ));
+        }
+        if i1.islands < 3 || i1.parents < 2 || i1.parents >= i1.islands {
+            return Err("I1 needs at least 3 islands and 2 <= parents < islands".into());
+        }
+    }
     template.check_grammar(decoder.pool(), decoder.grammar())?;
 
     let cap = ((cfg.population_size as f64) * 0.05).floor().max(1.0) as usize;
@@ -1262,6 +1693,7 @@ fn run_recipe_a_vl_islands_with_strategies(
         })
         .collect();
     let mut migrations = 0;
+    let mut crossovers = 0;
 
     for generation in 0..cfg.generations {
         for (island, population) in populations.iter_mut().enumerate() {
@@ -1291,10 +1723,26 @@ fn run_recipe_a_vl_islands_with_strategies(
             *population = ga.population.clone();
         }
         if (generation + 1) % islands.migration_interval == 0 {
-            migrations += migrate_islands(&mut populations, migrants_per_event);
+            migrations += populations.len();
+            match i1 {
+                Some(i1) => {
+                    crossovers += migrate_i1(
+                        &mut populations,
+                        i1.parents,
+                        decoder,
+                        template,
+                        evaluator,
+                        cfg.mutation_sigma,
+                    );
+                }
+                None => {
+                    migrate_islands(&mut populations, migrants_per_event);
+                }
+            }
         }
     }
 
+    let homogenisation = island_divergence(&populations, decoder.pool().len());
     let best = populations
         .iter()
         .flat_map(|population| population.chromosomes.iter())
@@ -1331,6 +1779,8 @@ fn run_recipe_a_vl_islands_with_strategies(
         island_bests,
         migrations,
         migrants_per_event,
+        crossovers,
+        homogenisation,
     })
 }
 
@@ -1423,6 +1873,82 @@ mod tests {
     }
 
     #[test]
+    fn illuminated_recipe_a_fills_a_mome_grid() {
+        let pool = MaterialPool::new(vec![
+            Material::new("H", 20.0, 200.0).unwrap(),
+            Material::new("L", 10.0, 150.0).unwrap(),
+        ])
+        .unwrap();
+        let decoder = Decoder::without_constraints(pool).unwrap();
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0),
+            constant("substrate", 1.52, 0.0),
+            vec![constant("H", 2.2, 0.0), constant("L", 1.46, 0.0)],
+        )
+        .unwrap();
+        let evaluator = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            zero_spec(),
+            EvaluatorOptions::default(),
+        )
+        .unwrap();
+        let cfg = RecipeAConfig {
+            population_size: 8,
+            generations: 3,
+            max_layers: 4,
+            mutation_sigma: 0.2,
+            seed: Some(5),
+        };
+        let archive_cfg = ArchiveConfig {
+            depth_bins: 4,
+            thickness_bins: 4,
+            max_layers: cfg.max_layers as f64,
+            max_thickness_nm: 800.0,
+            max_front: 8,
+        };
+        let result =
+            run_recipe_a_illuminated(&decoder, &template, &evaluator, &cfg, archive_cfg).unwrap();
+        assert!(!result.archive.is_empty());
+        assert!(result.archive.coverage() > 0.0);
+        assert!(result.archive.best().is_some());
+        assert!(result.best.merit.is_finite());
+    }
+
+    #[test]
+    fn h0_control_runs_a_multi_start_refinement() {
+        let pool = MaterialPool::new(vec![
+            Material::new("H", 20.0, 200.0).unwrap(),
+            Material::new("L", 10.0, 150.0).unwrap(),
+        ])
+        .unwrap();
+        let decoder = Decoder::without_constraints(pool).unwrap();
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0),
+            constant("substrate", 1.52, 0.0),
+            vec![constant("H", 2.2, 0.0), constant("L", 1.46, 0.0)],
+        )
+        .unwrap();
+        let mut evaluator = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            zero_spec(),
+            EvaluatorOptions::default(),
+        )
+        .unwrap();
+        let cfg = H0Config {
+            starts: 3,
+            max_layers: 3,
+            mutation_sigma: 0.2,
+            needle_steps: 0,
+            seed: Some(3),
+        };
+        let result = run_h0_control(&decoder, &template, &mut evaluator, &cfg, None).unwrap();
+        assert!(result.merit.is_finite());
+        assert!(result.decoded.len() <= cfg.max_layers);
+    }
+
+    #[test]
     fn recipe_a_runs_and_returns_a_legal_design() {
         let pool = MaterialPool::new(vec![
             Material::new("H", 20.0, 200.0).unwrap(),
@@ -1455,6 +1981,55 @@ mod tests {
         assert!(result.decoded.len() <= cfg.max_layers);
         assert!(result.merit.is_finite(), "{result:?}");
         assert_eq!(evaluator.evaluate(&result.stack).unwrap(), result.merit);
+    }
+
+    #[test]
+    fn i1_runs_cross_island_children_and_reports_divergence() {
+        let pool = MaterialPool::new(vec![
+            Material::new("H", 20.0, 200.0).unwrap(),
+            Material::new("L", 10.0, 150.0).unwrap(),
+        ])
+        .unwrap();
+        let decoder = Decoder::without_constraints(pool).unwrap();
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0),
+            constant("substrate", 1.52, 0.0),
+            vec![constant("H", 2.2, 0.0), constant("L", 1.46, 0.0)],
+        )
+        .unwrap();
+        let evaluator = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            zero_spec(),
+            EvaluatorOptions::default(),
+        )
+        .unwrap();
+        let cfg = RecipeAConfig {
+            population_size: 9,
+            generations: 3,
+            max_layers: 3,
+            mutation_sigma: 0.2,
+            seed: Some(11),
+        };
+        let i1 = I1Config {
+            islands: 3,
+            migration_interval: 1,
+            parents: 2,
+        };
+        let result = run_recipe_a_i1(&decoder, &template, &evaluator, &cfg, &i1).unwrap();
+        assert_eq!(result.island_bests.len(), 3);
+        assert_eq!(result.migrations, cfg.generations * 3);
+        assert!(result.crossovers <= cfg.generations * 3);
+        assert!(result.homogenisation.is_finite());
+        assert!((0.0..=1.0).contains(&result.homogenisation));
+        assert!(result.best.merit.is_finite());
+
+        let bad = I1Config {
+            islands: 2,
+            migration_interval: 1,
+            parents: 2,
+        };
+        assert!(run_recipe_a_i1(&decoder, &template, &evaluator, &cfg, &bad).is_err());
     }
 
     #[test]

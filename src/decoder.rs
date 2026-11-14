@@ -13,6 +13,8 @@
 
 use std::fmt;
 
+use navette::smatrix::synthesis::structure::DesignStack;
+
 /// Default cap on decoded films.
 pub const DEFAULT_MAX_LAYERS: usize = 80;
 
@@ -628,6 +630,63 @@ impl Decoder {
     /// The caller supplies the target width, normally the GA chromosome width;
     /// the stack must fit in it. A decoded stack with repairs is encoded in its
     /// repaired form, which is exactly what the next decode should see.
+    /// A4 consumer-side legality check: every film resolves to a pool
+    /// material, stays inside that material's thickness bounds, and every
+    /// adjacent pair is admitted by this decoder's grammar.
+    ///
+    /// This is the stack-level check the bridge runs after assembly. The
+    /// engine-side A4 bounds/grammar API remains navette's owner; this method
+    /// only refuses a stack that the decoder's own contract cannot represent.
+    pub fn validate_stack(&self, stack: &DesignStack) -> Result<(), String> {
+        let mut previous: Option<usize> = None;
+        for (row, film) in stack.films().iter().enumerate() {
+            let base = film
+                .label
+                .as_deref()
+                .unwrap_or(film.material.as_ref())
+                .split('#')
+                .next()
+                .unwrap_or(film.material.as_ref());
+            let index = self
+                .pool()
+                .materials()
+                .iter()
+                .position(|material| {
+                    material.name() == base || material.name() == film.material.as_ref()
+                })
+                .ok_or_else(|| {
+                    format!(
+                        "A4 stack check: film {row} material {:?} is not in the decoder pool",
+                        film.material
+                    )
+                })?;
+            let material = &self.pool().materials()[index];
+            if !film.d_nm.is_finite()
+                || film.d_nm < material.min_thickness_nm() - 1e-9
+                || film.d_nm > material.max_thickness_nm() + 1e-9
+            {
+                return Err(format!(
+                    "A4 stack check: film {row} ({:?}) has {} nm outside [{}, {}]",
+                    material.name(),
+                    film.d_nm,
+                    material.min_thickness_nm(),
+                    material.max_thickness_nm()
+                ));
+            }
+            if let Some(prev) = previous {
+                if !self.grammar().allows(prev, index) {
+                    return Err(format!(
+                        "A4 stack check: adjacency {:?} -> {:?} is not legal",
+                        self.pool().materials()[prev].name(),
+                        material.name()
+                    ));
+                }
+            }
+            previous = Some(index);
+        }
+        Ok(())
+    }
+
     pub fn encode(&self, decoded: &DecodedStack, width: usize) -> Result<Genome, DecodeError> {
         let films = decoded
             .layers()
@@ -852,6 +911,42 @@ mod tests {
         assert!((decoded.layers()[0].thickness_nm - 10.0).abs() < 1e-12);
         assert!((decoded.layers()[1].thickness_nm - 160.0).abs() < 1e-12);
         assert!((decoded.layers()[2].thickness_nm - 100.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn stack_check_enforces_bounds_and_adjacency() {
+        use navette::smatrix::synthesis::structure::LayerSpec;
+
+        let decoder = Decoder::without_constraints(pool()).unwrap();
+        let stack = |films: Vec<LayerSpec>| {
+            DesignStack::with_films(
+                LayerSpec::constant("air", 1.0, 0.0, 0.0, 1),
+                LayerSpec::constant("sub", 1.52, 0.0, 0.0, 1),
+                films,
+            )
+            .unwrap()
+        };
+        let good = stack(vec![
+            LayerSpec::constant("L", 1.46, 0.0, 50.0, 1),
+            LayerSpec::constant("H", 2.2, 0.0, 100.0, 1),
+        ]);
+        decoder.validate_stack(&good).unwrap();
+
+        let thick = stack(vec![LayerSpec::constant("H", 2.2, 0.0, 400.0, 1)]);
+        assert!(decoder.validate_stack(&thick).is_err());
+
+        let allowed = vec![vec![false, false, false]; 3];
+        let mut allowed = allowed;
+        allowed[0][1] = true;
+        let strict = decoder
+            .with_grammar(AdjacencyGrammar::from_allowed(allowed).unwrap())
+            .unwrap();
+        assert!(strict.validate_stack(&good).is_ok());
+        let reversed = stack(vec![
+            LayerSpec::constant("H", 2.2, 0.0, 100.0, 1),
+            LayerSpec::constant("L", 1.46, 0.0, 50.0, 1),
+        ]);
+        assert!(strict.validate_stack(&reversed).is_err());
     }
 
     #[test]

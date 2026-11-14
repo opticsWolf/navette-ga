@@ -19,40 +19,35 @@ dependency** — one strategy, with the copy gated as below. Owner amendments
 A1–A6 are specified in §2.9; the F5/G4(b) upstream-request protocol is gone —
 amendments are implemented by the owner, never requested.*
 
-## Implementation checkpoint (2026-11-14)
+## Implementation checkpoint (2026-11-15)
 
-- **Navette `dev_ga`:** A3 `SmatrixContext::evaluate_many` (`f0748cf`) and
-  A1 `synthesis::staged` scan/insert/polish/cleanup (`b02c03f`). The staged
-  surface is additive; `run_needle_cycles` is unchanged.
-- **`navette-ga`:** G2 decoder, G1 bridge, A1 memetic operator, and Recipe A
-  GA paths: single-island and the Phase 2 ring (`genetic_algorithms` ->
-  three-key chromosome -> decoder -> navette merit).
-- **Phase 1 exit artifact:** G3 rung-2 material loader backed by navette's
-  public ordered material evaluation; terminal LM + needle finish with
-  Lamarckian genome write-back and an actual-trial scan certificate; C00-class
-  AR ledger at `docs/studies/phase1_c00_ar.md` (16 layers, avg R = 0.659 %,
-  no actually improving scanned candidate). Full suite: 43 tests.
-- **Phase 2 VL operators:** `VlRecipeAConfig` uses a true variable-length
-  chromosome, `VariableLength(Pad)` crossover, and a Gaussian + insertion +
-  deletion mutation portfolio; `length_penalty` adds static parsimony, and
-  `run_recipe_a_vl_islands` applies the same ring policy to variable-length
-  genomes. `IslandStrategy` / `HeterogeneousIslandConfig` add per-island
-  mutation-scale and selection regimes for both fixed and VL rings. The
-  fixed-width presence-coded path remains the default. `ParsimonyRamp` /
-  `run_recipe_a_vl_ramp` interpolate a length penalty across generations.
-  `TribeConstraint` / `run_recipe_a_tribes` add per-island decoder regimes
-  (presence threshold and adjacency grammar) on the fixed-width ring; migrants
-  are re-evaluated by the destination's next advance. `run_recipe_a_vl_tribes`
-  applies the same regimes to the variable-length ring.
-- **Phase 0 code exit:** quarter-wave and two-layer V-coat checks pass; the G9
-  micro-bench covers evaluate, LM, A1 scan, and scan+insert+polish; the memetic
-  operator calls the stages, not a document round-trip.
-- **Release gate:** A1/A3 are not in published navette 0.10.0. The bridge is
-  local-path-only until a navette release carries them; `cargo publish` is
+- **Navette `dev_ga`:** A3 `SmatrixContext::evaluate_many` (`f0748cf`), A1
+  `synthesis::staged` (`b02c03f`), A2 `ga-introspect` merit parts and
+  thickness residual Jacobian, and the public read-only
+  `cycle::joint_needle_scan` (`c25a0d5`).
+- **`navette-ga`:** G2 decoder, G1 bridge, A1 memetic operator, fixed and
+  variable-length Recipe A, the Phase 2 ring, and the new Phase 2/3 modules
+  (`moors_split`, `qd`, `study`, `bench`). Full suite: **64 tests**.
+- **Phase 1 exit artifact:** G3 rung-2 material loader; terminal LM + needle
+  finish with Lamarckian write-back and actual-trial scan certificate;
+  C00-class ledger at `docs/studies/phase1_c00_ar.md` (16 layers, avg
+  R = 0.659 %, no actually improving scanned candidate).
+- **Phase 2 evidence:** spectral joint scan/step/run with two environments
+  and H/L/B multi-material edges; one-cycle joint equivalence with
+  `run_needle_cycles` (base materials equal, thicknesses < 1e-6 nm); H0
+  control; A2 per-target parts and Jacobian; consumer-side A4 stack check;
+  S4-lite illuminated MOME archive; S6 `moors` split. Details and limits:
+  `docs/studies/phase2_phase3_ledger.md`.
+- **Phase 3 evidence:** I1 cross-island multi-parent crossover with
+  homogenisation readout; G7 campaign queue/pins/pruner/importance; G8
+  kurobako problem and H0-H7 registry. H6 screening and H7 seeding dispatch
+  are not yet wired.
+- **Release gate:** A1/A3/A2 are not in published navette 0.10.0. The bridge
+  is local-path-only until a navette release carries them; `cargo publish` is
   expected to fail verification meanwhile.
-- **Remaining:** A2 (Jacobian/merit introspection), A4 (native bounds/grammar
-  API), and the remaining Phase 2 of §2.4.1 (spectral joint scan/polish runs,
-  joint `run_needle_cycles` equivalence, and full multi-material joint runs).
+- **Remaining:** navette-native A4 (per-material bounds and insert/migrate
+  grammar hook), H6/H7 dispatch, a 40-layer production filter and
+  merit-vs-depth bake, and the released-navette gate.
 
 ## 0. What navette already is (and why the strategy collapses around it)
 
@@ -253,22 +248,23 @@ The remaining investigation has five parts:
    `joint_gap_insert` gates a chosen needle through the same door and inserts
    it transactionally into every environment, extending the routing table.
    The same test verifies one shared 25 nm film, the refused outer locus
-   leaving the design unchanged, and the post-insert neighbour rejection. A
-   spectral joint scan/polish run, equivalence with `run_needle_cycles`, polish/cleanup
-   edge-move assertions, and the diffusion-barrier acceptance case remain.
+   leaving the design unchanged, and the post-insert neighbour rejection.
+   The spectral joint scan/step/run and one-cycle `run_needle_cycles`
+   equivalence are now tested, as are cleanup edge preservation and the
+   barrier/edge-layer case.
 4. **Evidence.** Phase 1 covers label resolution, empty/unknown edge lists,
    assembled edges, edge-to-pin mapping, grammar bidirectionality, and a
    restricted scan, a flat boundary needle filtered by host and edge rules,
    multi-material validation, the `"*"` rejection, and the public joint-gap
    acceptance door with a two-environment edge/neighbour check. Phase 2 still
    adds contradiction diagnostics, structural joint candidate enumeration and
-   chosen-locus insertion (done), equivalence with `run_needle_cycles` under
-   the same `NeedleRules`, a spectral joint scan/polish run, and polish/cleanup
-   edge-move assertions; the B barrier/edge-layer case is covered and no-rules
-   runs stay bit-identical.
-5. **Scope.** Phase 1 is complete. Phase 2 adds joint gap acceptance and a
-   chosen-locus joint insertion (both done), the joint scan/polish run, and
-   multi-material joint validation.
+   chosen-locus insertion, spectral joint scan/step/run, one-cycle
+   `run_needle_cycles` equivalence, and cleanup edge preservation; the B
+   barrier/edge-layer case is covered and no-rules runs stay bit-identical.
+5. **Scope.** Phase 1 is complete. Phase 2 adds joint gap acceptance, a
+   chosen-locus joint insertion, the spectral joint scan/step/run, and
+   multi-material joint validation. All are implemented; navette-native A4
+   stays open.
 
 **2.5 MOO split-off.** `moors` builders with fitness closures over the G1
 bridge; objectives (merit, N, total thickness, robustness perturbation,
@@ -360,7 +356,9 @@ extended ring; fully connected only as the low-diameter ablation.
   indices). The GA memetic operator (G4) then calls stages directly — no
   document round-trip. `run_needle` becomes a thin loop over the same stages
   (no behaviour change, existing benches stay valid).
-- **A2 — optimiser introspection for DQD (G6).** Expose the builtin LM's
+- **A2 — optimiser introspection for DQD (G6).** *Implemented in navette
+  `dev_ga` under the opt-in `ga-introspect` feature and exposed by the
+  bridge.* Expose the builtin LM's
   analytic Jacobian (`jacobian() -> DMatrix<f64>`, merit × free-thickness) and
   per-target merit breakdown (`merit_parts() -> Vec<(TargetId, f64)>`) so the
   QD/DQD loop reads descriptor gradients without re-solving. Feature-gated
@@ -372,6 +370,9 @@ extended ring; fully connected only as the low-diameter ablation.
   §2.1 nesting question structurally (one scheduler sees the whole grid)
   instead of empirically per campaign.
 - **A4 — decoder-adjacent physics in navette (moves v4 work item 5 inward).**
+  *Consumer-side stack validation (`Decoder::validate_stack`) is implemented;
+  navette-native per-material bounds and the construct/insert/migrate grammar
+  hook remain open.*
   Per-material default thickness bounds from material metadata
   (`bounds[m]`, overridable per run); pinned layer indices excluded from the
   LM free set *and* the needle scan mask; adjacency-grammar hook as a
@@ -455,6 +456,11 @@ stands on E00 picks.
   **Status:** implemented; the ledger is `docs/studies/phase1_c00_ar.md`
   (16-layer H/L AR, 400–900 nm, avg R = 0.659 %, LM converged, d_min at the
   configured 10 nm bound, zero actual improving scanned candidates).
+  **Phase 2 status:** the ring/tribes/parsimony paths, spectral joint run,
+  joint equivalence, H0 control, A2 introspection, consumer-side A4, S4-lite
+  archive, and S6 split are implemented and tested; the 40-layer production
+  filter/merit-vs-depth bake and navette-native A4 remain. See
+  `docs/studies/phase2_phase3_ledger.md`.
 - **Phase 2 — Recipe B core (month):** heterogeneous islands/tribes under the
   §2.8.1 island policy (ring, k=10, one best migrant,
   best-replace-worst-if-better with legality repair; the ring driver is
@@ -474,7 +480,10 @@ stands on E00 picks.
   (G11, reported separately from H0–H7), §1.1 copy gate evaluated. Exit: the
   H0–H7 comparison set (H1–H7 = S1/S2/S3/S4/S6/S7/S8 embodiments, H0 =
   classical needle-plus-refinement multi-start; review R9) rerunnable by a
-  third party under the §2.7 statistical protocol.
+  third party under the §2.7 statistical protocol. **Phase 3 status:** I1,
+  the G7 campaign object, the S4/F1 MOME archive, the S6 split, and the
+  kurobako problem/H0-H7 registry are implemented; H6/H7 dispatch and the
+  full third-party harness remain.
 - **Phase 4 — frontier (quarter):** F2/F3/F4, full-wave evaluator entry via
   SAIL. Exit: V9/V21 ablations published, V12 re-cited.
 

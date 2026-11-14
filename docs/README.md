@@ -3,7 +3,9 @@
 > `research/papers/` (git-ignored), matching the filenames below. The Rust
 > implementation is the single `navette-ga` package at the repository root
 > (`src/`); see the root `README.md` and `docs/integration.md` for how the
-> code is built and adopted into Navette.
+> code is built and adopted into Navette. Implementation ledgers:
+> `studies/phase1_c00_ar.md` (Phase 1 exit) and
+> `studies/phase2_phase3_ledger.md` (Phase 2/3 modules and their limits).
 
 # Web research: evolutionary / swarm / genetic optimization — and thin-film optical design
 

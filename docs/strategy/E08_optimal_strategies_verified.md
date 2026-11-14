@@ -10,7 +10,7 @@ found), **QUALIFIED** (mechanism confirmed, integration is ours), **HEURISTIC** 
 wisdom, no primary located), **GAP** (nothing in-graph — build or fetch it). Survey-scoped
 crate claims ("only X does Y") mean "among surveyed crates", not the world.*
 
-## 0. Current status (2026-11-14)
+## 0. Current status (2026-11-15)
 
 - **Current documents:** `PAPER_ga_thinfilm_strategies_v4.md` (strategy),
   `E09_rust_implementation_strategy_v2.md` (build), `E10_cherrypick_reassembly_v2.md`
@@ -27,14 +27,22 @@ crate claims ("only X does Y") mean "among surveyed crates", not the world.*
   acceptance (`gap_accepts_needle` / `joint_gap_accepts`), structural
   candidate enumeration (`joint_gap_sites`), and transactional chosen-locus
   insertion (`joint_gap_insert`), including through a multi-material edge
-  list, the B barrier/edge-layer case is covered, and one-cycle flat staged
-  equivalence with `run_needle_cycles` is tested; a spectral joint scan/polish
-  run, joint `run_needle_cycles` equivalence, and full multi-material joint runs
-  remain (E09 v2 §2.4.1). It is a data contract, not a second adjacency grammar.
+  list, the B barrier/edge-layer case is covered, one-cycle flat staged
+  equivalence with `run_needle_cycles` is tested, and the spectral joint
+  scan/step/run, one-cycle joint equivalence, cleanup edge preservation, and a
+  two-step multi-material joint run are now covered (E09 v2 §2.4.1). It is a
+  data contract, not a second adjacency grammar.
 - **Phase 1 exit artifact:** the G3 material loader consumes navette's ordered
   material evaluation; the terminal LM/needle finish writes back into the
   genome and the actual-trial scan certificate is recorded in
   `docs/studies/phase1_c00_ar.md` (C00-class H/L AR, 400–900 nm).
+- **Phase 2/3 modules:** A2 introspection (`ga-introspect` merit parts and
+  thickness residual Jacobian), consumer-side A4 stack validation, the S4/F1
+  MOME archive and S4-lite illuminated run, the S6 `moors` split, the H0
+  control, I1 cross-island multi-parent crossover, the G7 campaign object, and
+  the G8 kurobako problem/H0-H7 registry are implemented and tested. Full
+  suite: 64 tests. Navette-native A4, H6/H7 dispatch, and the 40-layer
+  production bake remain. Details: `docs/studies/phase2_phase3_ledger.md`.
 - **Review status:** 21 findings / 11 gaps / 11 risks (round 1: 19/10/10; round 2 adds
   E15/E16/G11/R11). S1–S10 remain the strategy spine; certification is the C2
   scan certificate (P(z)≈0 is A6-only), and S3's migration policy is fixed in
