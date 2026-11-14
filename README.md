@@ -14,9 +14,10 @@ implemented and tested. The GA runs `genetic_algorithms` over three random
 keys per layer, decodes with presence-coded variable length, assembles a
 navette `DesignStack`, and minimizes joint merit. Closed-form quarter-wave and
 V-coat checks pass, and the G9 micro-bench covers evaluate, LM, A1 scan, and
-scan+insert+polish. A1/A3 live on the local Navette `dev_ga` checkout; A2/A4
-and the Phase 2 island driver remain. Publishing waits for a navette release
-containing A1/A3. The specification of record is
+scan+insert+polish. A1/A3 live on the local Navette `dev_ga` checkout; A2/A4, the
+Phase 2 island driver, and the material-boundary-rule study (navette
+`NeedleRules` insert/edge lists in E09 v2 §2.4.1) remain. Publishing waits for
+a navette release containing A1/A3. The specification of record is
 [`E09_rust_implementation_strategy_v2.md`](docs/strategy/E09_rust_implementation_strategy_v2.md)
 and [`E10_cherrypick_reassembly_v2.md`](docs/strategy/E10_cherrypick_reassembly_v2.md).
 

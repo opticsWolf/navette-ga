@@ -34,8 +34,9 @@ amendments are implemented by the owner, never requested.*
   local-path-only until a navette release carries them; `cargo publish` is
   expected to fail verification meanwhile.
 - **Remaining:** A2 (Jacobian/merit introspection), A4 (native bounds/grammar
-  API), variable-length insertion/deletion operators, and the Phase 2 island
-  driver.
+  API), the §2.4.1 material-boundary investigation (insert/edge rules,
+  boundary needles, grammar interaction), variable-length insertion/deletion
+  operators, and the Phase 2 island driver.
 
 ## 0. What navette already is (and why the strategy collapses around it)
 
@@ -159,7 +160,9 @@ part of its API so islands/tribes share legality with different strategies.
 Constraint-ownership rule (review R2): the decoder derives its tables from
 navette's A4 physics API at startup — bounds, pins, and grammar each have
 exactly one owner, the sync direction is decoder-from-navette, and no second
-source of truth exists at runtime.
+source of truth exists at runtime. Navette's `NeedleRules` (insert rules plus
+edge lists) is a host/needle and edge contract, not the adjacency grammar;
+§2.4.1 fixes the cross-check before either table is populated.
 
 **2.3 Material pool loader (G3, fresh glue + offline step).** Navette materials
 are data (model name + params) → load pool → similarity-order (rung 2 minimum:
@@ -180,6 +183,51 @@ factor). (b) *Native per-step (A1 implemented by the owner per the schedule in
 `scan/insert/polish/cleanup` stages directly — no serialisation round-trip,
 an order of magnitude less overhead per memetic step. V30 scope respected:
 needle steps refine proximity designs mid-loop; cold growth stays stochastic.
+
+**2.4.1 Material-boundary rules (investigation; bridge + decoder).** Navette
+already exposes the mechanism this crate needs: `InsertRules` maps a host
+label to the labels of needles it accepts, `MaterialPool::with_insert_rules`
+turns that into the per-host matrix, `NeedleRules { insert, outer, inner,
+seed_edges }` applies it to a design and sets the `EdgeMaterials`, and
+`boundary_accepts`/`gap_accepts` enforce the rules at interior, boundary, and
+shared-design loci. This is the "needle material boundary" to reuse, not
+re-invent.
+
+The current `navette-ga` bridge leaves it unused: `StackTemplate::needle_pool`
+builds an unrestricted pool, `assemble` labels films but never calls
+`set_edge_materials`, and `AdjacencyGrammar` is an independent
+neighbour-to-neighbour constraint. The investigation has six parts:
+
+1. **Carry the rules once.** Put `insert`, `outer`, `inner`, and `seed_edges`
+   on a bridge-level `BoundaryRules` resolved against `StackTemplate.materials`
+   (unique labels, validated at construction). `assemble` sets the edge
+   materials and `needle_pool` calls `with_insert_rules`; no second insert
+   matrix is stored or re-derived.
+2. **Edge lists vs decoder pins.** The decoder pins fix a material index in
+   the genome; navette's edge lists constrain the built stack. Use both and
+   make a contradiction a construction error. Decide whether `seed_edges` is
+   allowed (it inserts a film and changes the decoded layer count) or is
+   replaced by decoder pins; a GA run must not silently gain a layer.
+3. **Grammar interaction.** `InsertRules` is host → needle, not
+   neighbour → neighbour. Do not mechanically derive `AdjacencyGrammar` from
+   it. Test the three candidate relations: (a) independent, with insert rules
+   gating only the memetic operator; (b) grammar as a conservative superset;
+   (c) grammar derived from insert rules plus edge lists. Choose one, record
+   the direction, and assert every decoded stack the memetic operator can edit
+   is legal under both.
+4. **Boundary needles.** Enable `boundary_needles` and verify the staged
+   `scan`/`insert` apply `accepts_site` (flat) and `gap_accepts` (joint); a
+   polish or cleanup step must not move an edge off its list or create a
+   forbidden neighbour.
+5. **Evidence.** Use a matrix such as `H → [L]`, `L → []`, outer `[H]`, inner
+   `[L]`; assert no forbidden scan candidate or boundary insertion, exercise
+   `seed_edges` and contradiction diagnostics, cover a multi-environment gap,
+   and compare with `run_needle_cycles` under the same `NeedleRules`. A
+   diffusion-barrier / edge-layer filter is the acceptance case; no-rules runs
+   stay bit-identical.
+6. **Scope.** Phase 1 carries the rules, applies them to pool + edges, and
+   validates decoded stacks (no seeding). Phase 2 adds boundary needles, joint
+   gaps, the seed-or-pin decision, and the grammar truth table.
 
 **2.5 MOO split-off.** `moors` builders with fitness closures over the G1
 bridge; objectives (merit, N, total thickness, robustness perturbation,
@@ -287,6 +335,9 @@ extended ring; fully connected only as the low-diameter ablation.
   consulted at construct/insert/migrate time. The external `ga::decoder`
   (G2) keeps genome/key logic; navette owns legality — one owner per side of
   the boundary, decoder tables derived from this API at startup (§2.2 rule).
+  The consumer side reuses the existing `NeedleRules` (`InsertRules` plus
+  outer/inner edge lists) through §2.4.1; A4 does not create a parallel
+  boundary-rule API.
 - **A5 — licensing decision (owner call, before Phase 2).** Options: keep
   LGPL-3.0 (research-safe, product needs dylib/process boundary per §6.1);
   add an explicit static-linking exception for Rust rlib use; or dual-license
@@ -311,7 +362,7 @@ extended ring; fully connected only as the low-diameter ablation.
 | G1 | Fitness bridge (genome → DesignStack → merit + breakdown, batched) | ~200 lines | navette 0.10.x + A3 (owner) |
 | G2 | `ga::decoder` (VL keys, bounds[m], grammar, pins, masks) | ~300 lines | — (first code, v4 work item 5) |
 | G3 | Pool loader + similarity order + latent table import + illumination sweep | ~150 + offline Python | navette materials-as-data |
-| G4 | Needle memetic operator (A1 stages directly; doc-level only until A1 lands) | ~150 lines | A1 (owner) |
+| G4 | Needle memetic operator (A1 stages; §2.4.1 boundary rules) | ~150 lines | A1 (owner) |
 | G5 | QD descriptors from navette outputs + archive glue | ~150 lines | symbios 0.2, navette compute keys |
 | G6 | DQD wiring (A2 Jacobian → descriptor gradients → CMA-MAE loop) | ~200 lines | A2 (owner) |
 | G7 | Study wiring (enqueue/pin/prune/fANOVA callbacks) | ~100 lines | blackopt/optimizer |
@@ -344,24 +395,27 @@ stands on E00 picks.
 - **Phase 0 — pins + amendments + ground truth (days):** `navette = "=0.10.0"`,
   `rust-version 1.90` / toolchain 1.98.0, G9 micro-bench reproducing README
   numbers; land A1+A3 (smallest surface, unblocks G1/G4), spec A2/A4. Closed-form
-  unit checks gate
-  the bridge (review G9): single quarter-wave layer and two-layer V-coat with
+  unit checks gate the bridge (review G9): single quarter-wave layer and
+  two-layer V-coat with
   known optima — the cheapest end-to-end correctness check available. Exit:
   scan/LM timings within 2× of published; memetic operator calls stages, not
   documents; unit checks green.
 - **Phase 1 — Recipe A (1–2 weeks engineering; a day's compute):** G2 + G1 +
-  G3(rung 2) + genetic_algorithms single island + terminal needle/LM;
+  G3(rung 2) + genetic_algorithms single island + terminal needle/LM; consume
+  navette `NeedleRules` through §2.4.1 (insert/edge lists, no seeding);
   reproduce a C00-class AR (Fig. 2.5 lineage) under the scan certificate — no
   scanned candidate insertion improves the joint merit, LM converged,
   d_min-stable (review C2; discrete scope stated, P(z)≈0 reserved for
-  post-A6 campaigns). Exit: fabricated-plausible stack + ledger entry.
+  post-A6 campaigns). Exit: fabricated-plausible stack + ledger entry + no
+  forbidden needle placement under the rule matrix.
 - **Phase 2 — Recipe B core (month):** heterogeneous islands/tribes under the
   §2.8.1 island policy (ring, k=10, one best migrant,
   best-replace-worst-if-better with legality repair), G4(a) needle-memetic,
+  §2.4.1 boundary rules (boundary needles, seed-or-pin, grammar truth table),
   dynamic parsimony, moors split (S6), rung-3 pool, H0 control arm running in
   parallel (review G1/R6: if the control wins at equal compute, S2–S4 narrow
   to refinement machinery honestly). Exit: 40-layer filter + merit-vs-depth
-  map (S4-lite via symbios grid). Budget box (review
+  map (S4-lite via symbios grid) + a diffusion-barrier/edge-layer rule case. Budget box (review
   G8, parametric): population evals dominate — P individuals × G generations
   millisecond-scale solves is tens of minutes at 64×200; memetic overhead per
   round (top-m designs × scan-ms + LM-tens-of-ms) stays single-digit percent
