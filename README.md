@@ -8,14 +8,15 @@ This is the working repository for the strategy set in
 decoding, islands/tribes, needle-memetic refinement, multi-objective splits,
 quality-diversity archives, and the study/proof layer around them.
 
-**Status:** Phase 0 in progress. `ga::decoder` (G2) and the `ga::bridge` core
-(G1) are implemented and tested: variable-length keys, material bounds, edge
-pins, adjacency repair, navette stack assembly, joint-merit evaluation, and
-the LM finish. Closed-form quarter-wave and V-coat checks pass, and the G9
-micro-bench is runnable. The bridge calls A1 staged needle scan/insert/polish/
-cleanup and A3 batch evaluation from the local Navette `dev_ga` checkout; the
-memetic operator is wired through them. A2/A4 remain. Publishing waits for a
-navette release containing A1/A3. The specification of record is
+**Status:** Phase 1 in progress. `ga::decoder` (G2), the `ga::bridge` core
+(G1), the A1 memetic operator, and a single-island Recipe A GA path are
+implemented and tested. The GA runs `genetic_algorithms` over three random
+keys per layer, decodes with presence-coded variable length, assembles a
+navette `DesignStack`, and minimizes joint merit. Closed-form quarter-wave and
+V-coat checks pass, and the G9 micro-bench covers evaluate, LM, A1 scan, and
+scan+insert+polish. A1/A3 live on the local Navette `dev_ga` checkout; A2/A4
+and the Phase 2 island driver remain. Publishing waits for a navette release
+containing A1/A3. The specification of record is
 [`E09_rust_implementation_strategy_v2.md`](docs/strategy/E09_rust_implementation_strategy_v2.md)
 and [`E10_cherrypick_reassembly_v2.md`](docs/strategy/E10_cherrypick_reassembly_v2.md).
 
@@ -33,7 +34,7 @@ src/
   lib.rs                   # crate docs + module map
   decoder.rs               # G2/G3: VL keys, material pool, bounds, pins, grammar
   bridge.rs                # G1/G4: fitness bridge + needle-memetic operator
-  engines.rs               # S1-S3: island/tribe GA + assembly backbone
+  engines.rs               # S1-S3: Recipe A GA + island/tribe backbone
   qd.rs                    # S4/F1: MAP-Elites / MOME archive glue
   study.rs                 # G7: blackopt/optimizer study wiring
   bench.rs                 # G8/G9: kurobako problems + perf harness (feature)

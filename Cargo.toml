@@ -37,6 +37,8 @@ navette = { version = "0.10.0", path = "../Navette/rust/navette", features = [
 ] }
 # Evolutionary core (dependency in Phases 0-2; §1.1-gated copy source in Phase 3).
 genetic_algorithms = "=3.0.0"
+# Key mutation for the custom three-key chromosome.
+rand = "0.9"
 # QD archive base (dependency now; fork base for F1 MOME).
 symbios-genetics = "=0.2.3"
 # Pareto split-off.

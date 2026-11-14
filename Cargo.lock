@@ -2063,6 +2063,7 @@ dependencies = [
  "moors",
  "navette",
  "optimizer",
+ "rand 0.9.5",
  "symbios-genetics",
 ]
 
