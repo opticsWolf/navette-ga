@@ -26,7 +26,7 @@ against host and edge rules; single-material edges become pins, multi-material
 edges validate at assembly, and seeding is rejected. The Phase 2 island
 driver is in place (`run_recipe_a_islands`: ring, one best migrant capped at
 5%, best-replace-worst-if-better). Joint boundary needles, joint gaps,
-multi-material edge checks, heterogeneous tribes, variable-length operators,
+multi-material edge checks, heterogeneous tribes, dynamic parsimony ramps,
 and A2/A4 remain. Publishing waits for a navette release containing A1/A3. The specification of
 record is
 [`E09_rust_implementation_strategy_v2.md`](docs/strategy/E09_rust_implementation_strategy_v2.md)
@@ -47,7 +47,7 @@ src/
   decoder.rs               # G2/G3: VL keys, material pool, bounds, pins, grammar
   materials.rs             # G3: navette material library -> decoder pool/template
   bridge.rs                # G1/G4: fitness bridge, boundary rules, needle-memetic operator
-  engines.rs               # S1-S3: Recipe A GA + island/tribe backbone
+  engines.rs               # S1-S3: Recipe A GA (fixed/VL) + island driver
   qd.rs                    # S4/F1: MAP-Elites / MOME archive glue
   study.rs                 # G7: blackopt/optimizer study wiring
   bench.rs                 # G8/G9: kurobako problems + perf harness (feature)

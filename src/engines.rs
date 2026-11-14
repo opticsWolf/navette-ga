@@ -18,12 +18,14 @@ use genetic_algorithms::chromosomes::ChromosomeLength;
 use genetic_algorithms::configuration::ProblemSolving;
 use genetic_algorithms::fitness::FitnessFnWrapper;
 use genetic_algorithms::ga::Ga;
-use genetic_algorithms::operations::{Crossover, GaussianParams, Mutation, Selection, Survivor};
+use genetic_algorithms::operations::{
+    AlignmentStrategy, Crossover, GaussianParams, Mutation, Selection, Survivor,
+};
 use genetic_algorithms::population::Population;
 use genetic_algorithms::rng::{make_rng, set_seed};
 use genetic_algorithms::traits::{
     ChromosomeT, ConfigurationT, CrossoverConfig, GeneT, LinearChromosome, MutationConfig,
-    OperatorCompat, RealValuedMutation, SelectionConfig, StoppingConfig,
+    OperatorCompat, RealValuedMutation, SelectionConfig, StoppingConfig, SurvivorConfig,
 };
 use rand::Rng;
 
@@ -243,6 +245,40 @@ impl Default for IslandRecipeConfig {
             islands: 4,
             migration_interval: 10,
             migration_count: 1,
+        }
+    }
+}
+
+/// True variable-length Recipe A configuration.
+///
+/// Unlike [`RecipeAConfig`], the chromosome is not a fixed-width presence-coded
+/// array: the engine samples a length in `[min_layers, max_layers]` and the
+/// mutation portfolio can insert or delete genes. Crossover uses the
+/// variable-length `Pad` alignment. Decoder presence keys remain part of the
+/// gene, so an inserted gene can still be inactive until its presence key rises.
+#[derive(Clone, Debug)]
+pub struct VlRecipeAConfig {
+    pub population_size: usize,
+    pub generations: usize,
+    pub min_layers: usize,
+    pub max_layers: usize,
+    pub mutation_sigma: f64,
+    /// Optional parsimony pressure: adjusted fitness adds
+    /// `length_penalty * DNA length` for minimization.
+    pub length_penalty: Option<f64>,
+    pub seed: Option<u64>,
+}
+
+impl Default for VlRecipeAConfig {
+    fn default() -> Self {
+        Self {
+            population_size: 32,
+            generations: 20,
+            min_layers: 1,
+            max_layers: 12,
+            mutation_sigma: 0.15,
+            length_penalty: None,
+            seed: None,
         }
     }
 }
@@ -695,6 +731,265 @@ pub fn run_recipe_a_finished(
     )
 }
 
+fn validate_vl_recipe_a(cfg: &VlRecipeAConfig) -> Result<(), String> {
+    if cfg.population_size < 2 {
+        return Err("VL Recipe A needs a population of at least 2".into());
+    }
+    if cfg.min_layers == 0 || cfg.min_layers > cfg.max_layers {
+        return Err(format!(
+            "VL Recipe A needs 1 <= min_layers <= max_layers; got {} and {}",
+            cfg.min_layers, cfg.max_layers
+        ));
+    }
+    if cfg.generations == 0 {
+        return Err("VL Recipe A needs at least one generation".into());
+    }
+    if !cfg.mutation_sigma.is_finite() || cfg.mutation_sigma <= 0.0 {
+        return Err("VL Recipe A mutation_sigma must be finite and positive".into());
+    }
+    if cfg
+        .length_penalty
+        .is_some_and(|penalty| !penalty.is_finite() || penalty < 0.0)
+    {
+        return Err("VL Recipe A length_penalty must be finite and non-negative".into());
+    }
+    Ok(())
+}
+
+fn build_vl_recipe_a_ga_with(
+    cfg: &VlRecipeAConfig,
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    population: Option<Population<LayerChromosome>>,
+    generations: usize,
+    seed: Option<u64>,
+) -> Result<Ga<LayerChromosome>, String> {
+    let init_width = cfg.max_layers;
+    let init_fn = move |genes: usize, _alleles: Option<&[KeyGene]>| -> Vec<KeyGene> {
+        let mut rng = make_rng();
+        let width = if genes == 0 { init_width } else { genes };
+        (0..width).map(|_| KeyGene::random(&mut rng)).collect()
+    };
+    let mutations = vec![
+        Mutation::Gaussian(GaussianParams {
+            sigma: Some(cfg.mutation_sigma),
+        }),
+        Mutation::Insertion,
+        Mutation::Deletion,
+    ];
+
+    let mut builder = Ga::<LayerChromosome>::new()
+        .with_chromosome_length(ChromosomeLength::Variable {
+            min: cfg.min_layers,
+            max: cfg.max_layers,
+        })
+        .with_population_size(cfg.population_size)
+        .with_initialization_fn(init_fn)
+        .with_fitness_fn(recipe_a_fitness(decoder, template, evaluator))
+        .with_selection_method(Selection::Tournament)
+        .with_crossover_method(Crossover::VariableLength(AlignmentStrategy::Pad))
+        .with_mutation_portfolio(mutations)
+        .with_survivor_method(Survivor::Fitness)
+        .with_problem_solving(ProblemSolving::Minimization)
+        .with_threads(1)
+        .with_max_generations(generations);
+    if let Some(population) = population {
+        builder = builder.with_population(population);
+    }
+    if let Some(penalty) = cfg.length_penalty {
+        builder = builder.with_length_penalty(penalty);
+    }
+    if let Some(seed) = seed {
+        builder = builder.with_rng_seed(seed);
+    }
+    builder.build().map_err(|e| e.to_string())
+}
+
+fn build_vl_recipe_a_ga(
+    cfg: &VlRecipeAConfig,
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+) -> Result<Ga<LayerChromosome>, String> {
+    build_vl_recipe_a_ga_with(
+        cfg,
+        decoder,
+        template,
+        evaluator,
+        None,
+        cfg.generations,
+        cfg.seed,
+    )
+}
+
+fn vl_initial_population(cfg: &VlRecipeAConfig, seed: Option<u64>) -> Population<LayerChromosome> {
+    set_seed(seed);
+    let mut rng = make_rng();
+    let chromosomes = (0..cfg.population_size)
+        .map(|_| {
+            let width = rng.random_range(cfg.min_layers..=cfg.max_layers);
+            let dna = (0..width).map(|_| KeyGene::random(&mut rng)).collect();
+            LayerChromosome::from_dna(dna)
+        })
+        .collect();
+    Population::new(chromosomes)
+}
+
+/// Run Recipe A with a true variable-length chromosome.
+///
+/// The GA samples lengths in `[min_layers, max_layers]`; its mutation
+/// portfolio mixes Gaussian key moves with insertion and deletion. The
+/// decoder still applies presence, grammar, and pinned-edge rules, so an
+/// inserted gene is not automatically a present film.
+pub fn run_recipe_a_vl(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    cfg: &VlRecipeAConfig,
+) -> Result<RecipeAResult, String> {
+    validate_vl_recipe_a(cfg)?;
+    template.check_grammar(decoder.pool(), decoder.grammar())?;
+    let mut ga = build_vl_recipe_a_ga(cfg, decoder, template, evaluator)?;
+    let best = ga.run().map_err(|e| e.to_string())?.best_chromosome.clone();
+    let best_genome = best.to_genome();
+    let decoded = decoder.decode(&best_genome).map_err(|e| e.to_string())?;
+    let stack = template.assemble(&decoded)?;
+    let merit = evaluator.evaluate(&stack)?;
+    Ok(RecipeAResult {
+        best_genome,
+        decoded,
+        stack,
+        merit,
+        generations: cfg.generations,
+    })
+}
+
+/// Run the true variable-length Recipe A and immediately apply its terminal
+/// memetic finish.
+pub fn run_recipe_a_vl_finished(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &mut FitnessEvaluator,
+    cfg: &VlRecipeAConfig,
+    operator: &MemeticOperator,
+    max_insertions: usize,
+) -> Result<(RecipeAResult, TerminalReport), String> {
+    let result = run_recipe_a_vl(decoder, template, evaluator, cfg)?;
+    finish_recipe_a(
+        decoder,
+        template,
+        evaluator,
+        result,
+        operator,
+        max_insertions,
+    )
+}
+
+/// Run true variable-length Recipe A on the Phase 2 ring.
+///
+/// The ring, migrant cap, and best-replace-worst-if-better rule are the same as
+/// [`run_recipe_a_islands`]; the difference is that each island owns a
+/// variable-length chromosome and a mutation portfolio that can insert or
+/// delete genes. Migration is still host-independent: a legal variable-length
+/// migrant is cloned into the destination and the next generation's crossover
+/// pads/trims it as needed.
+pub fn run_recipe_a_vl_islands(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    cfg: &VlRecipeAConfig,
+    islands: &IslandRecipeConfig,
+) -> Result<IslandRecipeResult, String> {
+    validate_vl_recipe_a(cfg)?;
+    if islands.islands < 2 {
+        return Err("island Recipe A needs at least two islands".into());
+    }
+    if islands.migration_interval == 0 {
+        return Err("island Recipe A migration_interval must be >= 1".into());
+    }
+    if islands.migration_count == 0 {
+        return Err("island Recipe A migration_count must be >= 1".into());
+    }
+    template.check_grammar(decoder.pool(), decoder.grammar())?;
+
+    let cap = ((cfg.population_size as f64) * 0.05).floor().max(1.0) as usize;
+    let migrants_per_event = islands.migration_count.min(cap);
+    let mut populations: Vec<Population<LayerChromosome>> = (0..islands.islands)
+        .map(|island| {
+            let seed = cfg
+                .seed
+                .map(|base| base.wrapping_add((island as u64).wrapping_mul(1009)));
+            vl_initial_population(cfg, seed)
+        })
+        .collect();
+    let mut migrations = 0;
+
+    for generation in 0..cfg.generations {
+        for (island, population) in populations.iter_mut().enumerate() {
+            let seed = cfg.seed.map(|base| {
+                base.wrapping_add(
+                    ((generation * islands.islands + island) as u64)
+                        .wrapping_mul(1009)
+                        .wrapping_add(7),
+                )
+            });
+            let mut ga = build_vl_recipe_a_ga_with(
+                cfg,
+                decoder,
+                template,
+                evaluator,
+                Some(population.clone()),
+                1,
+                seed,
+            )?;
+            ga.run().map_err(|e| e.to_string())?;
+            *population = ga.population.clone();
+        }
+        if (generation + 1) % islands.migration_interval == 0 {
+            migrations += migrate_islands(&mut populations, migrants_per_event);
+        }
+    }
+
+    let best = populations
+        .iter()
+        .flat_map(|population| population.chromosomes.iter())
+        .min_by(|a, b| a.fitness().total_cmp(&b.fitness()))
+        .cloned()
+        .ok_or_else(|| "island Recipe A produced an empty population".to_string())?;
+    if !best.fitness().is_finite() {
+        return Err("island Recipe A found no legal design".into());
+    }
+    let best_genome = best.to_genome();
+    let decoded = decoder.decode(&best_genome).map_err(|e| e.to_string())?;
+    let stack = template.assemble(&decoded)?;
+    let merit = evaluator.evaluate(&stack)?;
+    let island_bests = populations
+        .iter()
+        .map(|population| {
+            population
+                .chromosomes
+                .iter()
+                .map(LayerChromosome::fitness)
+                .min_by(|a, b| a.total_cmp(b))
+                .unwrap_or(f64::INFINITY)
+        })
+        .collect();
+
+    Ok(IslandRecipeResult {
+        best: RecipeAResult {
+            best_genome,
+            decoded,
+            stack,
+            merit,
+            generations: cfg.generations,
+        },
+        island_bests,
+        migrations,
+        migrants_per_event,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -943,5 +1238,127 @@ mod tests {
         assert_eq!(report.final_merit, finished.merit);
         assert_eq!(ev.evaluate(&finished.stack).unwrap(), finished.merit);
         assert!(report.min_thickness_nm >= 0.0);
+    }
+
+    #[test]
+    fn vl_recipe_a_runs_with_insertion_and_deletion_enabled() {
+        let pool = MaterialPool::new(vec![
+            Material::new("H", 20.0, 200.0).unwrap(),
+            Material::new("L", 10.0, 150.0).unwrap(),
+        ])
+        .unwrap();
+        let decoder = Decoder::without_constraints(pool).unwrap();
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0),
+            constant("substrate", 1.52, 0.0),
+            vec![constant("H", 2.2, 0.0), constant("L", 1.46, 0.0)],
+        )
+        .unwrap();
+        let evaluator = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            zero_spec(),
+            EvaluatorOptions::default(),
+        )
+        .unwrap();
+        let cfg = VlRecipeAConfig {
+            population_size: 8,
+            generations: 4,
+            min_layers: 1,
+            max_layers: 8,
+            mutation_sigma: 0.2,
+            length_penalty: None,
+            seed: Some(31),
+        };
+        let result = run_recipe_a_vl(&decoder, &template, &evaluator, &cfg).unwrap();
+
+        assert!((cfg.min_layers..=cfg.max_layers).contains(&result.best_genome.len()));
+        assert!(result.decoded.len() <= cfg.max_layers);
+        assert!(result.merit.is_finite(), "{result:?}");
+        assert_eq!(evaluator.evaluate(&result.stack).unwrap(), result.merit);
+    }
+
+    #[test]
+    fn vl_recipe_a_length_penalty_prefers_shorter_dna() {
+        let pool = MaterialPool::new(vec![
+            Material::new("H", 20.0, 200.0).unwrap(),
+            Material::new("L", 10.0, 150.0).unwrap(),
+        ])
+        .unwrap();
+        let decoder = Decoder::without_constraints(pool).unwrap();
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0),
+            constant("substrate", 1.52, 0.0),
+            vec![constant("H", 2.2, 0.0), constant("L", 1.46, 0.0)],
+        )
+        .unwrap();
+        let evaluator = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            zero_spec(),
+            EvaluatorOptions::default(),
+        )
+        .unwrap();
+        let cfg = VlRecipeAConfig {
+            population_size: 8,
+            generations: 10,
+            min_layers: 1,
+            max_layers: 8,
+            mutation_sigma: 0.2,
+            length_penalty: Some(1.0e6),
+            seed: Some(41),
+        };
+        let result = run_recipe_a_vl(&decoder, &template, &evaluator, &cfg).unwrap();
+
+        assert!(
+            result.best_genome.len() <= 4,
+            "{}",
+            result.best_genome.len()
+        );
+        assert!(result.merit.is_finite());
+    }
+
+    #[test]
+    fn vl_island_recipe_a_migrates_variable_length_genomes() {
+        let pool = MaterialPool::new(vec![
+            Material::new("H", 20.0, 200.0).unwrap(),
+            Material::new("L", 10.0, 150.0).unwrap(),
+        ])
+        .unwrap();
+        let decoder = Decoder::without_constraints(pool).unwrap();
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0),
+            constant("substrate", 1.52, 0.0),
+            vec![constant("H", 2.2, 0.0), constant("L", 1.46, 0.0)],
+        )
+        .unwrap();
+        let evaluator = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            zero_spec(),
+            EvaluatorOptions::default(),
+        )
+        .unwrap();
+        let cfg = VlRecipeAConfig {
+            population_size: 6,
+            generations: 2,
+            min_layers: 1,
+            max_layers: 6,
+            mutation_sigma: 0.2,
+            length_penalty: None,
+            seed: Some(51),
+        };
+        let policy = IslandRecipeConfig {
+            islands: 2,
+            migration_interval: 1,
+            migration_count: 1,
+        };
+        let result =
+            run_recipe_a_vl_islands(&decoder, &template, &evaluator, &cfg, &policy).unwrap();
+
+        assert_eq!(result.island_bests.len(), 2);
+        assert_eq!(result.migrations, cfg.generations * policy.islands);
+        assert!(result.best.merit.is_finite());
+        assert!((cfg.min_layers..=cfg.max_layers).contains(&result.best.best_genome.len()));
     }
 }

@@ -31,7 +31,13 @@ amendments are implemented by the owner, never requested.*
   public ordered material evaluation; terminal LM + needle finish with
   Lamarckian genome write-back and an actual-trial scan certificate; C00-class
   AR ledger at `docs/studies/phase1_c00_ar.md` (16 layers, avg R = 0.659 %,
-  no actually improving scanned candidate). Full suite: 33 tests.
+  no actually improving scanned candidate). Full suite: 36 tests.
+- **Phase 2 VL operators:** `VlRecipeAConfig` uses a true variable-length
+  chromosome, `VariableLength(Pad)` crossover, and a Gaussian + insertion +
+  deletion mutation portfolio; `length_penalty` adds static parsimony, and
+  `run_recipe_a_vl_islands` applies the same ring policy to variable-length
+  genomes. The fixed-width presence-coded path remains the default. A dynamic
+  parsimony ramp and heterogeneous tribes are still open.
 - **Phase 0 code exit:** quarter-wave and two-layer V-coat checks pass; the G9
   micro-bench covers evaluate, LM, A1 scan, and scan+insert+polish; the memetic
   operator calls the stages, not a document round-trip.
@@ -40,8 +46,7 @@ amendments are implemented by the owner, never requested.*
   expected to fail verification meanwhile.
 - **Remaining:** A2 (Jacobian/merit introspection), A4 (native bounds/grammar
   API), Phase 2 of §2.4.1 (joint boundary needles, joint gaps,
-  multi-material edges), heterogeneous tribes, and variable-length
-  insertion/deletion operators.
+  multi-material edges), heterogeneous tribes, and dynamic parsimony ramps.
 
 ## 0. What navette already is (and why the strategy collapses around it)
 
