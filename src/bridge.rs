@@ -26,7 +26,7 @@ use navette::smatrix::synthesis::pipeline::SpectralInputs;
 use navette::smatrix::synthesis::staged::{PolishReport, PolishScope};
 use navette::smatrix::synthesis::structure::{ClampReport, DesignStack, EdgeMaterials, LayerSpec};
 
-use crate::decoder::{DecodedStack, MaterialPool as DecoderPool, Pins};
+use crate::decoder::{AdjacencyGrammar, DecodedStack, MaterialPool as DecoderPool, Pins};
 
 /// A material-boundary contract for a stack template.
 ///
@@ -207,6 +207,58 @@ impl StackTemplate {
             resolve(&self.boundary.outer, "outer")?,
             resolve(&self.boundary.inner, "inner")?,
         ))
+    }
+
+    /// Check the host→needle rules against the decoder's adjacency grammar.
+    ///
+    /// A split needle inside host `H` produces `H | N | H`, so an allowed
+    /// `H → N` pair needs both `H → N` and `N → H` in the grammar. This is a
+    /// consistency check, not a derivation: the grammar remains the decoder's
+    /// single source of adjacency truth. The `"*"` rule is skipped because it
+    /// names no concrete host.
+    pub fn check_grammar(
+        &self,
+        decoder: &DecoderPool,
+        grammar: &AdjacencyGrammar,
+    ) -> Result<(), String> {
+        let Some(rules) = &self.boundary.insert else {
+            return Ok(());
+        };
+        let lookup = |label: &str, which: &str| -> Result<usize, String> {
+            let mut hits = decoder
+                .materials()
+                .iter()
+                .enumerate()
+                .filter(|(_, material)| material.name() == label)
+                .map(|(index, _)| index);
+            match (hits.next(), hits.next()) {
+                (Some(index), None) => Ok(index),
+                (None, _) => Err(format!(
+                    "insert/grammar check: {which} {label:?} is not a decoder material"
+                )),
+                (Some(_), Some(_)) => Err(format!(
+                    "insert/grammar check: the decoder has more than one material named \
+                     {label:?}; names must be unique"
+                )),
+            }
+        };
+        for (host, needles) in rules {
+            if host == "*" {
+                continue;
+            }
+            let h = lookup(host, "host")?;
+            for needle in needles {
+                let n = lookup(needle, "needle")?;
+                if !grammar.allows(h, n) || !grammar.allows(n, h) {
+                    return Err(format!(
+                        "insert/grammar conflict: {host:?} accepts {needle:?}, but the \
+                         adjacency grammar does not allow both directions; a split needle \
+                         creates {host} | {needle} | {host}"
+                    ));
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Build a navette stack from decoded layers.
@@ -701,6 +753,49 @@ mod tests {
             ]))
             .unwrap();
         assert!(template.assemble(&bad).is_err());
+    }
+
+    #[test]
+    fn insert_rules_must_match_both_grammar_directions() {
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0, 1),
+            constant("substrate", 1.52, 0.0, 1),
+            vec![
+                constant("H", 2.2, 0.0, 1),
+                constant("L", 1.46, 0.0, 1),
+                constant("G", 1.8, 0.0, 1),
+            ],
+        )
+        .unwrap();
+        let rules = BoundaryRules {
+            insert: Some(
+                [("H".to_string(), vec!["L".to_string()])]
+                    .into_iter()
+                    .collect(),
+            ),
+            ..BoundaryRules::default()
+        };
+        let template = template.with_boundary_rules(rules).unwrap();
+        let decoder_pool = MaterialPool::new(vec![
+            Material::new("H", 20.0, 300.0).unwrap(),
+            Material::new("L", 10.0, 200.0).unwrap(),
+        ])
+        .unwrap();
+
+        let open =
+            AdjacencyGrammar::from_allowed(vec![vec![true, true], vec![true, true]]).unwrap();
+        template.check_grammar(&decoder_pool, &open).unwrap();
+
+        let no_h_to_l =
+            AdjacencyGrammar::from_allowed(vec![vec![true, false], vec![true, true]]).unwrap();
+        let err = template
+            .check_grammar(&decoder_pool, &no_h_to_l)
+            .unwrap_err();
+        assert!(err.contains("insert/grammar conflict"), "{err}");
+
+        let no_l_to_h =
+            AdjacencyGrammar::from_allowed(vec![vec![true, true], vec![false, true]]).unwrap();
+        assert!(template.check_grammar(&decoder_pool, &no_l_to_h).is_err());
     }
 
     #[test]

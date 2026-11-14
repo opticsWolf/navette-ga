@@ -251,6 +251,7 @@ pub fn run_recipe_a(
     if !cfg.mutation_sigma.is_finite() || cfg.mutation_sigma <= 0.0 {
         return Err("Recipe A mutation_sigma must be finite and positive".into());
     }
+    template.check_grammar(decoder.pool(), decoder.grammar())?;
 
     let fit_decoder = decoder.clone();
     let fit_template = template.clone();

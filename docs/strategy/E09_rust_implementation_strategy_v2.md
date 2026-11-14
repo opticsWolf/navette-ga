@@ -200,8 +200,11 @@ and errors when the decoded first/last films are not on their lists;
 `MemeticOperator::from_template` uses that pool. A single-material edge list
 can also become decoder `Pins` through `edge_pins`; multi-material lists stay
 validation-only pending the Phase 2 seed-or-pin choice. No second insert
-matrix is stored. Tests cover unknown/empty labels, assembled-edge compliance,
-edge-to-pin mapping, and a memetic scan restricted to the allowed needle
+matrix is stored. `check_grammar` also requires every concrete `H → N` insert
+pair to be legal in both directions in the decoder's adjacency grammar, and
+`run_recipe_a` calls that check before starting. Tests cover unknown/empty
+labels, assembled-edge compliance, edge-to-pin mapping, grammar
+bidirectionality, and a memetic scan restricted to the allowed needle
 material.
 
 The remaining investigation has five parts:
@@ -211,24 +214,25 @@ The remaining investigation has five parts:
    contradiction an assembly error. Phase 2 decides whether `seed_edges` is
    allowed (it inserts a film and changes the decoded layer count) or is
    replaced by decoder pins; a GA run must not silently gain a layer.
-2. **Grammar interaction.** `InsertRules` is host → needle, not
-   neighbour → neighbour. Do not mechanically derive `AdjacencyGrammar` from
-   it. Test the three candidate relations: (a) independent, with insert rules
-   gating only the memetic operator; (b) grammar as a conservative superset;
-   (c) grammar derived from insert rules plus edge lists. Choose one, record
-   the direction, and assert every decoded stack the memetic operator can edit
-   is legal under both.
+2. **Grammar interaction — consistency check, not derivation.** `InsertRules`
+   is host → needle, not neighbour → neighbour. A split needle `H | N | H`
+   creates both adjacencies, so Phase 1 requires every concrete `H → N` pair
+   to be legal in both directions; `check_grammar` reports a conflict instead
+   of silently deriving a second grammar. Phase 2 still decides how the `"*"`
+   rule and boundary needles at multi-material edges are checked; the
+   grammar stays the decoder's single source of adjacency truth.
 3. **Boundary needles.** Enable `boundary_needles` and verify the staged
    `scan`/`insert` apply `accepts_site` (flat) and `gap_accepts` (joint); a
    polish or cleanup step must not move an edge off its list or create a
    forbidden neighbour.
 4. **Evidence.** Phase 1 covers label resolution, empty/unknown edge lists,
-   assembled edges, and a restricted scan. Phase 2 adds `seed_edges` and
-   contradiction diagnostics, a multi-environment gap, equivalence with
-   `run_needle_cycles` under the same `NeedleRules`, and a diffusion-barrier /
-   edge-layer filter as the acceptance case; no-rules runs stay bit-identical.
+   assembled edges, edge-to-pin mapping, grammar bidirectionality, and a
+   restricted scan. Phase 2 adds `seed_edges` and contradiction diagnostics, a
+   multi-environment gap, equivalence with `run_needle_cycles` under the same
+   `NeedleRules`, and a diffusion-barrier / edge-layer filter as the acceptance
+   case; no-rules runs stay bit-identical.
 5. **Scope.** Phase 1 is complete. Phase 2 adds boundary needles, joint gaps,
-   the seed-or-pin decision, and the grammar truth table.
+   the seed-or-pin decision, and the `"*"`/multi-material edge cases.
 
 **2.5 MOO split-off.** `moors` builders with fitness closures over the G1
 bridge; objectives (merit, N, total thickness, robustness perturbation,
