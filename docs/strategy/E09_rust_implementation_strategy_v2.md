@@ -31,7 +31,7 @@ amendments are implemented by the owner, never requested.*
   public ordered material evaluation; terminal LM + needle finish with
   Lamarckian genome write-back and an actual-trial scan certificate; C00-class
   AR ledger at `docs/studies/phase1_c00_ar.md` (16 layers, avg R = 0.659 %,
-  no actually improving scanned candidate). Full suite: 41 tests.
+  no actually improving scanned candidate). Full suite: 42 tests.
 - **Phase 2 VL operators:** `VlRecipeAConfig` uses a true variable-length
   chromosome, `VariableLength(Pad)` crossover, and a Gaussian + insertion +
   deletion mutation portfolio; `length_penalty` adds static parsimony, and
@@ -42,8 +42,8 @@ amendments are implemented by the owner, never requested.*
   `run_recipe_a_vl_ramp` interpolate a length penalty across generations.
   `TribeConstraint` / `run_recipe_a_tribes` add per-island decoder regimes
   (presence threshold and adjacency grammar) on the fixed-width ring; migrants
-  are re-evaluated by the destination's next advance. VL tribe constraints
-  remain open.
+  are re-evaluated by the destination's next advance. `run_recipe_a_vl_tribes`
+  applies the same regimes to the variable-length ring.
 - **Phase 0 code exit:** quarter-wave and two-layer V-coat checks pass; the G9
   micro-bench covers evaluate, LM, A1 scan, and scan+insert+polish; the memetic
   operator calls the stages, not a document round-trip.
@@ -51,9 +51,9 @@ amendments are implemented by the owner, never requested.*
   local-path-only until a navette release carries them; `cargo publish` is
   expected to fail verification meanwhile.
 - **Remaining:** A2 (Jacobian/merit introspection), A4 (native bounds/grammar
-  API), the remaining Phase 2 of §2.4.1 (spectral joint scan/polish runs,
+  API), and the remaining Phase 2 of §2.4.1 (spectral joint scan/polish runs,
   `run_needle_cycles` equivalence, diffusion-barrier acceptance,
-  multi-material joint validation) and VL tribe constraints.
+  multi-material joint validation).
 
 ## 0. What navette already is (and why the strategy collapses around it)
 

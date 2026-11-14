@@ -938,7 +938,7 @@ pub fn run_recipe_a_vl_islands(
     cfg: &VlRecipeAConfig,
     islands: &IslandRecipeConfig,
 ) -> Result<IslandRecipeResult, String> {
-    run_recipe_a_vl_islands_with_strategies(decoder, template, evaluator, cfg, islands, None)
+    run_recipe_a_vl_islands_with_strategies(decoder, template, evaluator, cfg, islands, None, None)
 }
 
 /// Run variable-length Recipe A on the ring with a per-island strategy.
@@ -957,6 +957,26 @@ pub fn run_recipe_a_vl_heterogeneous_islands(
         cfg,
         &heterogeneous.islands,
         Some(&heterogeneous.strategies),
+        None,
+    )
+}
+
+/// Run variable-length Recipe A on the ring with per-island decoder regimes.
+pub fn run_recipe_a_vl_tribes(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    cfg: &VlRecipeAConfig,
+    tribes: &HeterogeneousTribeConfig,
+) -> Result<IslandRecipeResult, String> {
+    run_recipe_a_vl_islands_with_strategies(
+        decoder,
+        template,
+        evaluator,
+        cfg,
+        &tribes.islands,
+        Some(&tribes.strategies),
+        Some(&tribes.constraints),
     )
 }
 
@@ -1211,10 +1231,14 @@ fn run_recipe_a_vl_islands_with_strategies(
     cfg: &VlRecipeAConfig,
     islands: &IslandRecipeConfig,
     strategies: Option<&[IslandStrategy]>,
+    constraints: Option<&[TribeConstraint]>,
 ) -> Result<IslandRecipeResult, String> {
     validate_vl_recipe_a(cfg)?;
     if let Some(strategies) = strategies {
         validate_island_strategies(strategies, islands.islands)?;
+    }
+    if let Some(constraints) = constraints {
+        validate_tribe_constraints(constraints, islands.islands, decoder.pool().len())?;
     }
     if islands.islands < 2 {
         return Err("island Recipe A needs at least two islands".into());
@@ -1249,9 +1273,13 @@ fn run_recipe_a_vl_islands_with_strategies(
                 )
             });
             let strategy = strategies.map(|all| &all[island]);
+            let island_decoder = match constraints {
+                Some(all) => tribe_decoder(decoder, &all[island])?,
+                None => decoder.clone(),
+            };
             let mut ga = build_vl_recipe_a_ga_with(
                 cfg,
-                decoder,
+                &island_decoder,
                 template,
                 evaluator,
                 Some(population.clone()),
@@ -1858,6 +1886,72 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.island_bests.len(), 2);
+        assert!(result.best.merit.is_finite());
+        assert!((cfg.min_layers..=cfg.max_layers).contains(&result.best.best_genome.len()));
+    }
+
+    #[test]
+    fn vl_tribe_recipe_a_runs_with_per_island_constraints() {
+        let pool = MaterialPool::new(vec![
+            Material::new("H", 20.0, 200.0).unwrap(),
+            Material::new("L", 10.0, 150.0).unwrap(),
+        ])
+        .unwrap();
+        let decoder = Decoder::without_constraints(pool).unwrap();
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0),
+            constant("substrate", 1.52, 0.0),
+            vec![constant("H", 2.2, 0.0), constant("L", 1.46, 0.0)],
+        )
+        .unwrap();
+        let evaluator = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            zero_spec(),
+            EvaluatorOptions::default(),
+        )
+        .unwrap();
+        let cfg = VlRecipeAConfig {
+            population_size: 6,
+            generations: 2,
+            min_layers: 1,
+            max_layers: 6,
+            mutation_sigma: 0.2,
+            length_penalty: None,
+            seed: Some(101),
+        };
+        let tribes = HeterogeneousTribeConfig {
+            islands: IslandRecipeConfig {
+                islands: 2,
+                migration_interval: 1,
+                migration_count: 1,
+            },
+            strategies: vec![
+                IslandStrategy {
+                    mutation_sigma: 0.1,
+                    selection: Selection::Tournament,
+                },
+                IslandStrategy {
+                    mutation_sigma: 0.4,
+                    selection: Selection::Rank,
+                },
+            ],
+            constraints: vec![
+                TribeConstraint {
+                    presence_threshold: Some(0.2),
+                    grammar: None,
+                },
+                TribeConstraint {
+                    presence_threshold: Some(0.95),
+                    grammar: None,
+                },
+            ],
+        };
+        let result =
+            run_recipe_a_vl_tribes(&decoder, &template, &evaluator, &cfg, &tribes).unwrap();
+
+        assert_eq!(result.island_bests.len(), 2);
+        assert_eq!(result.migrations, cfg.generations * tribes.islands.islands);
         assert!(result.best.merit.is_finite());
         assert!((cfg.min_layers..=cfg.max_layers).contains(&result.best.best_genome.len()));
     }
