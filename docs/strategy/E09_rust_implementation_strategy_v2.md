@@ -12,8 +12,7 @@ parent-pool scope, G11 cross-island recombination, R11 island-policy risk) —
 21 findings, 11 gaps, 11 risks. All E09-directed findings repaired, all gaps
 scheduled, all risks owned. Ground rule from the user: **navette owns the
 optics** — scatter (S-) matrix, not TMM, plus its native needle algorithm.
-Everything
-else is assigned below. Architecture decision (review C3, jointly recorded
+Everything else is assigned below. Architecture decision (review C3, jointly recorded
 with E10 v2): **E10 governs the three named copies** (VL chromosome +
 operators, island-driver skeleton, symbios fork) **and E09 governs every
 dependency** — one strategy, with the copy gated as below. Owner amendments
@@ -73,7 +72,7 @@ which descriptor gradients exist).
 
 | Subsystem (v4 strategy) | Crate (version) | Why this one |
 |---|---|---|
-| Optics + merit + needle + LM (S1/S2 core) | **navette 0.8.x** + `opt-basin` | Native needle, bounded LM w/ removal signal, joint merit, benches; basin backend = E00 refiner pick already integrated |
+| Optics + merit + needle + LM (S1/S2 core) | **navette 0.10.x** + `opt-basin` | Native needle, bounded LM w/ removal signal, joint merit, benches; basin backend = E00 refiner pick already integrated |
 | VL island GA (S1/S2/S3) | **genetic_algorithms 3.0.0** (dependency in Phases 0–2; gated copy in Phase 3, §1.1) | Only VL + length penalty + IslandGa + memetic slot + batch eval (E00 §2.1) |
 | Second evolutionary pillar / BO (S7) | **genoxide 0.x** (pin) | BO+PoF, MOEA/D, DE/SHADE; prove on 40-layer filter before committing |
 | Pareto split-off (S6) | **moors 0.2.11** (+pymoors plots) | NSGA-III/R-NSGA-II/Age-MOEA/REVEA, feasibility-first (V39) |
@@ -105,9 +104,9 @@ governing split, recorded identically in both documents:
   `genevo` 0.7's trait backbone (Simulation/Termination/Operator/Population)
   is adopted at the same gate as the `ga::engines` assembly skeleton — it is
   no longer an E10-only decision.
-- **Never copied** (unchanged): navette files (dependency until A5 decides),
-  Bucket C/D crates, anything with a clean API (moors, basin, egobox,
-  blackopt, genoxide, kurobako stay dependencies permanently).
+- **Never copied** (unchanged): navette files (dependency under the same
+  license; A5 resolved), Bucket C/D crates, anything with a clean API (moors,
+  basin, egobox, blackopt, genoxide, kurobako stay dependencies permanently).
 
 One strategy governs every phase; the copy is a conditional refactor, not a
 second strategy.
@@ -291,7 +290,7 @@ extended ring; fully connected only as the low-diameter ablation.
 
 | # | Glue | Size | Depends on |
 |---|---|---|---|
-| G1 | Fitness bridge (genome → DesignStack → merit + breakdown, batched) | ~200 lines | navette 0.8.x + A3 (owner) |
+| G1 | Fitness bridge (genome → DesignStack → merit + breakdown, batched) | ~200 lines | navette 0.10.x + A3 (owner) |
 | G2 | `ga::decoder` (VL keys, bounds[m], grammar, pins, masks) | ~300 lines | — (first code, v4 work item 5) |
 | G3 | Pool loader + similarity order + latent table import + illumination sweep | ~150 + offline Python | navette materials-as-data |
 | G4 | Needle memetic operator (A1 stages directly; doc-level only until A1 lands) | ~150 lines | A1 (owner) |
@@ -324,9 +323,10 @@ stands on E00 picks.
 
 ## 5. Build order with exit criteria
 
-- **Phase 0 — pins + amendments + ground truth (days):** `navette = "=0.8.x"`,
-  toolchain 1.88+, G9 micro-bench reproducing README numbers; land A1+A3
-  (smallest surface, unblocks G1/G4), spec A2/A4. Closed-form unit checks gate
+- **Phase 0 — pins + amendments + ground truth (days):** `navette = "=0.10.0"`,
+  `rust-version 1.90` / toolchain 1.98.0, G9 micro-bench reproducing README
+  numbers; land A1+A3 (smallest surface, unblocks G1/G4), spec A2/A4. Closed-form
+  unit checks gate
   the bridge (review G9): single quarter-wave layer and two-layer V-coat with
   known optima — the cheapest end-to-end correctness check available. Exit:
   scan/LM timings within 2× of published; memetic operator calls stages, not

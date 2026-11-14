@@ -18,10 +18,10 @@ rule (C5), and the maintenance rules own R3–R5.*
 
 ## 0. Governing-split decision (review C3, resolved with E09 v2)
 
-E09 v1 (depend on the crates) and E10 v1 (copy into `navette-ga`) prescribed
-different architectures for the VL chromosome, the island driver, and the QD
-archive with no reconciliation. The single governing strategy, recorded
-identically in both v2 documents:
+The pre-v2 E09/E10 drafts (since removed) prescribed different architectures
+for the VL chromosome, the island driver, and the QD archive with no
+reconciliation. The single governing strategy, recorded identically in both v2
+documents:
 
 - **Phases 0–2: E09 governs — depend.** Every crate below with a clean API is
   consumed as a cargo dependency. No copies, no forks (F1 excepted as a
@@ -137,10 +137,10 @@ navette-ga/                        # one package, LGPL-3.0-or-later (same as nav
 Why this shape: the **copied surface is minimal** (VL machinery that exists
 nowhere else + island skeleton + genevo backbone + QD fork base, all gated);
 everything with a clean API stays a dependency (no fork drift); copyleft never
-crosses a link boundary (GPL via CLI + CI invariant, LGPL via dep until A5);
-unknown-license crates contribute nothing. Estimated copied volume: <2 kSLoC
-against ~1,500 lines of fresh glue (E09 v2 §3) — the new crate is
-overwhelmingly ours, with provenance recorded per file.
+crosses a link boundary (GPL via CLI + CI invariant; LGPL stays a dependency
+under the same license); unknown-license crates contribute nothing. Estimated
+copied volume: <2 kSLoC against ~1,500 lines of fresh glue (E09 v2 §3) — the
+new crate is overwhelmingly ours, with provenance recorded per file.
 
 ## 4. Maintenance rules (avoiding fork rot)
 
