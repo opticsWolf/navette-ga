@@ -69,6 +69,14 @@ pub fn load_library(
     if wavelengths.is_empty() {
         return Err("material wavelength grid is empty".into());
     }
+    for pair in wavelengths.windows(2) {
+        if !(pair[0].is_finite() && pair[1].is_finite() && pair[0] < pair[1]) {
+            return Err(format!(
+                "material wavelength grid must be finite and strictly increasing; got {} then {}",
+                pair[0], pair[1]
+            ));
+        }
+    }
 
     let evaluated = evaluate_library(library, wavelengths)?;
     let mut loaded = Vec::with_capacity(evaluated.len());

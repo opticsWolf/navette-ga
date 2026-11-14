@@ -324,6 +324,9 @@ pub enum DecodeError {
     UnrepairableGrammar {
         position: usize,
     },
+    Unrepresentable {
+        reason: String,
+    },
 }
 
 impl fmt::Display for DecodeError {
@@ -366,6 +369,9 @@ impl fmt::Display for DecodeError {
             ),
             DecodeError::UnrepairableGrammar { position } => {
                 write!(f, "no legal material repair at layer boundary {position}")
+            }
+            DecodeError::Unrepresentable { reason } => {
+                write!(f, "stack cannot be encoded back into a genome: {reason}")
             }
         }
     }
@@ -597,6 +603,78 @@ impl Decoder {
         let repairs = self.repair_grammar(&mut layers, genome)?;
 
         Ok(DecodedStack { layers, repairs })
+    }
+
+    /// Encode a decoded stack back into a fixed-width genome.
+    ///
+    /// The encoder is the inverse of the presence-coded representation used by
+    /// a terminal memetic step: material and thickness keys are recovered from
+    /// the decoded layers, and absent slots are padded with `presence = 0`.
+    /// The caller supplies the target width, normally the GA chromosome width;
+    /// the stack must fit in it. A decoded stack with repairs is encoded in its
+    /// repaired form, which is exactly what the next decode should see.
+    pub fn encode(&self, decoded: &DecodedStack, width: usize) -> Result<Genome, DecodeError> {
+        let films = decoded
+            .layers()
+            .iter()
+            .map(|layer| (layer.material, layer.thickness_nm))
+            .collect::<Vec<_>>();
+        self.encode_films(&films, width)
+    }
+
+    /// Encode `(material index, thickness nm)` films into a fixed-width genome.
+    ///
+    /// This is the stack-level form used after a terminal memetic step, when
+    /// the design no longer carries a [`DecodedStack`]. Material indices are
+    /// the decoder pool's; thicknesses are mapped back into each material's
+    /// bound interval. Absent slots are padded with `presence = 0`.
+    pub fn encode_films(
+        &self,
+        films: &[(usize, f64)],
+        width: usize,
+    ) -> Result<Genome, DecodeError> {
+        if width > self.max_layers {
+            return Err(DecodeError::GenomeTooLong {
+                len: width,
+                max: self.max_layers,
+            });
+        }
+        if films.len() > width {
+            return Err(DecodeError::Unrepresentable {
+                reason: format!(
+                    "the stack has {} films but the genome width is {width}",
+                    films.len()
+                ),
+            });
+        }
+        let pool_len = self.pool.len();
+        let mut genes = vec![LayerGene::new(0.0, 0.0, 0.0); width];
+        for (slot, &(material_index, thickness_nm)) in films.iter().enumerate() {
+            if material_index >= pool_len {
+                return Err(DecodeError::InvalidMaterial {
+                    name: format!("material index {material_index}"),
+                    reason: "outside the pool".to_string(),
+                });
+            }
+            if !thickness_nm.is_finite() {
+                return Err(DecodeError::Unrepresentable {
+                    reason: format!("layer {slot} has a non-finite thickness"),
+                });
+            }
+            let material = &self.pool.materials()[material_index];
+            let span = material.max_thickness_nm() - material.min_thickness_nm();
+            let thickness_key = if span > 0.0 {
+                ((thickness_nm - material.min_thickness_nm()) / span).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            genes[slot] = LayerGene::new(
+                (material_index as f64 + 0.5) / pool_len as f64,
+                thickness_key,
+                1.0,
+            );
+        }
+        Ok(Genome::from(genes))
     }
 
     fn apply_pins(&self, layers: &mut [DecodedLayer], genome: &Genome) -> Result<(), DecodeError> {
@@ -893,6 +971,31 @@ mod tests {
         let genome = Genome::from(vec![gene(0.5, 0.5, 0.9), gene(0.5, 0.5, 0.9)]);
         let err = decoder.decode(&genome).unwrap_err();
         assert!(matches!(err, DecodeError::UnrepairableGrammar { .. }));
+    }
+
+    #[test]
+    fn encode_round_trips_a_decoded_stack_and_pads_absent_slots() {
+        let decoder = Decoder::without_constraints(pool()).unwrap();
+        let genome = Genome::from(vec![
+            gene(0.0, 0.25, 0.9),
+            gene(0.5, 0.75, 0.9),
+            gene(0.9, 0.5, 0.1),
+        ]);
+        let decoded = decoder.decode(&genome).unwrap();
+        assert_eq!(decoded.len(), 2);
+
+        let encoded = decoder.encode(&decoded, 3).unwrap();
+        assert_eq!(encoded.len(), 3);
+        assert_eq!(encoded.genes()[2].presence, 0.0);
+        let round_trip = decoder.decode(&encoded).unwrap();
+        assert_eq!(round_trip.materials(), decoded.materials());
+        for (a, b) in round_trip.layers().iter().zip(decoded.layers()) {
+            assert!((a.thickness_nm - b.thickness_nm).abs() < 1e-12);
+            assert_eq!(a.pinned, b.pinned);
+        }
+
+        let err = decoder.encode(&decoded, 1).unwrap_err();
+        assert!(matches!(err, DecodeError::Unrepresentable { .. }));
     }
 
     #[test]

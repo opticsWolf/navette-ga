@@ -9,8 +9,12 @@ decoding, islands/tribes, needle-memetic refinement, multi-objective splits,
 quality-diversity archives, and the study/proof layer around them.
 
 **Status:** Phase 2 in progress. `ga::decoder` (G2), the `ga::bridge` core
-(G1), the A1 memetic operator, and both Recipe A GA paths (single island and
-the Phase 2 ring) are implemented and tested. The GA runs `genetic_algorithms` over three random
+(G1), the A1 memetic operator, the G3 material loader, and both Recipe A GA
+paths (single island and the Phase 2 ring) are implemented and tested. The
+Phase 1 exit artifact is recorded in
+[`docs/studies/phase1_c00_ar.md`](docs/studies/phase1_c00_ar.md): a C00-class
+H/L AR over 400–900 nm with terminal LM/needle finish, Lamarckian write-back,
+and a zero-actual-improvement scan certificate. The GA runs `genetic_algorithms` over three random
 keys per layer, decodes with presence-coded variable length, assembles a
 navette `DesignStack`, and minimizes joint merit. Closed-form quarter-wave and
 V-coat checks pass, and the G9 micro-bench covers evaluate, LM, A1 scan, and
@@ -22,8 +26,8 @@ against host and edge rules; single-material edges become pins, multi-material
 edges validate at assembly, and seeding is rejected. The Phase 2 island
 driver is in place (`run_recipe_a_islands`: ring, one best migrant capped at
 5%, best-replace-worst-if-better). Joint boundary needles, joint gaps,
-multi-material edge checks, variable-length operators, and A2/A4 remain.
-Publishing waits for a navette release containing A1/A3. The specification of
+multi-material edge checks, heterogeneous tribes, variable-length operators,
+and A2/A4 remain. Publishing waits for a navette release containing A1/A3. The specification of
 record is
 [`E09_rust_implementation_strategy_v2.md`](docs/strategy/E09_rust_implementation_strategy_v2.md)
 and [`E10_cherrypick_reassembly_v2.md`](docs/strategy/E10_cherrypick_reassembly_v2.md).
@@ -41,6 +45,7 @@ CREDIT.md                  # provenance ledger (copied code only)
 src/
   lib.rs                   # crate docs + module map
   decoder.rs               # G2/G3: VL keys, material pool, bounds, pins, grammar
+  materials.rs             # G3: navette material library -> decoder pool/template
   bridge.rs                # G1/G4: fitness bridge, boundary rules, needle-memetic operator
   engines.rs               # S1-S3: Recipe A GA + island/tribe backbone
   qd.rs                    # S4/F1: MAP-Elites / MOME archive glue
@@ -50,6 +55,7 @@ src/
 examples/
   phase0_bench.rs          # G9: 61-wavelength evaluate/LM timing harness
 docs/
+  studies/                 # Phase 1 C00-class AR ledger and run artifacts
   README.md                # research/paper index
   integration.md           # how to add or link this crate in Navette
   strategy/                # E08-E10: the implementation strategy set

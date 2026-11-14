@@ -27,7 +27,7 @@ use genetic_algorithms::traits::{
 };
 use rand::Rng;
 
-use crate::bridge::{FitnessEvaluator, StackTemplate};
+use crate::bridge::{FitnessEvaluator, MemeticOperator, StackTemplate};
 use crate::decoder::{DecodedStack, Decoder, Genome, LayerGene};
 
 /// One gene: the three random keys of one layer.
@@ -257,6 +257,27 @@ pub struct RecipeAResult {
     pub generations: usize,
 }
 
+/// What a terminal memetic finish did, for the Phase 1 scan certificate.
+#[derive(Clone, Debug)]
+pub struct TerminalReport {
+    pub initial_merit: f64,
+    pub final_merit: f64,
+    /// Number of needle insertions the memetic operator accepted.
+    pub insertions: usize,
+    /// Total scans: the operator's scans plus the final certificate scan.
+    pub scans: usize,
+    /// Candidates the final scan still returned.
+    pub scan_candidates_after: usize,
+    /// Of those, how many actually lower the merit when inserted and scored.
+    /// Zero is the Phase 1 scan certificate.
+    pub actual_improving_after: usize,
+    /// The last LM run's termination was a convergence test (or there was
+    /// nothing free to optimize).
+    pub lm_converged: bool,
+    /// Smallest film thickness after the finish, in nm.
+    pub min_thickness_nm: f64,
+}
+
 /// Best design plus the policy bookkeeping from an island run.
 #[derive(Clone, Debug)]
 pub struct IslandRecipeResult {
@@ -337,6 +358,7 @@ fn build_recipe_a_ga(
         }))
         .with_survivor_method(Survivor::Fitness)
         .with_problem_solving(ProblemSolving::Minimization)
+        .with_threads(1)
         .with_max_generations(generations);
     if let Some(population) = population {
         builder = builder.with_population(population);
@@ -540,13 +562,148 @@ pub fn run_recipe_a_islands(
     })
 }
 
+/// Count final-scan candidates and the subset that actually improves the
+/// merit when inserted and evaluated. The analytic P sweep is a predictor;
+/// the certificate is the trial score.
+fn certificate_scan(
+    evaluator: &FitnessEvaluator,
+    stack: &navette::smatrix::synthesis::structure::DesignStack,
+    operator: &MemeticOperator,
+) -> Result<(usize, usize), String> {
+    let scan = operator.scan(evaluator, stack)?;
+    let current = evaluator.evaluate(stack)?;
+    let mut actual = 0usize;
+    for candidate in &scan.candidates {
+        let mut trial = stack.clone();
+        trial.insert_needle_candidate(&operator.pool, candidate)?;
+        if evaluator.evaluate(&trial)? < current - 1e-12 {
+            actual += 1;
+        }
+    }
+    Ok((scan.candidates.len(), actual))
+}
+
+/// Apply a terminal LM polish and up to `max_insertions` needle steps to a
+/// Recipe A result, then write the final stack back into a fixed-width genome.
+///
+/// This is the Phase 1 "terminal needle/LM" finish: the stack is polished
+/// first, the memetic operator scans/inserts/polishes while it can improve,
+/// and a final scan must be empty. The final stack is encoded back into the
+/// same chromosome width (Lamarckian write-back), re-decoded, and assembled so
+/// the returned genome, decoded stack, and design stack agree.
+///
+/// The finish writes back at the decoder's maximum width, so terminal
+/// insertions have room beyond the GA's starting `RecipeAConfig::max_layers`.
+/// It errors if the stack grows past that cap, or if an actually improving
+/// candidate remains after `max_insertions` steps, so the scan certificate
+/// cannot be silently skipped.
+pub fn finish_recipe_a(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &mut FitnessEvaluator,
+    mut result: RecipeAResult,
+    operator: &MemeticOperator,
+    max_insertions: usize,
+) -> Result<(RecipeAResult, TerminalReport), String> {
+    let initial_merit = evaluator.evaluate(&result.stack)?;
+    evaluator.refine_report(&mut result.stack)?;
+    let memetic = operator.apply(evaluator, &mut result.stack, max_insertions)?;
+    let (_, lm) = evaluator.refine_report(&mut result.stack)?;
+    let lm_converged = lm
+        .as_ref()
+        .is_none_or(|report| report.termination.is_converged());
+    let (scan_candidates_after, actual_improving_after) =
+        certificate_scan(evaluator, &result.stack, operator)?;
+    if actual_improving_after > 0 {
+        return Err(format!(
+            "terminal scan certificate failed: {actual_improving_after} of {scan_candidates_after}              scanned candidate(s) still improve the merit after {} insertion(s)",
+            memetic.steps.len()
+        ));
+    }
+
+    let width = decoder.max_layers().max(result.best_genome.len());
+    let films = result
+        .stack
+        .films()
+        .iter()
+        .map(|film| {
+            let pool_name = film
+                .label
+                .as_deref()
+                .unwrap_or_else(|| film.material.split('#').next().unwrap_or(&film.material));
+            let index = decoder
+                .pool()
+                .materials()
+                .iter()
+                .position(|material| material.name() == pool_name)
+                .ok_or_else(|| {
+                    format!(
+                        "terminal stack film {:?} is not in the decoder pool",
+                        film.material
+                    )
+                })?;
+            Ok((index, film.d_nm))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let best_genome = decoder
+        .encode_films(&films, width)
+        .map_err(|error| error.to_string())?;
+    let decoded = decoder.decode(&best_genome).map_err(|e| e.to_string())?;
+    let stack = template.assemble(&decoded)?;
+    let merit = evaluator.evaluate(&stack)?;
+    let min_thickness_nm = stack
+        .films()
+        .iter()
+        .map(|film| film.d_nm)
+        .reduce(f64::min)
+        .unwrap_or(0.0);
+
+    let report = TerminalReport {
+        initial_merit,
+        final_merit: merit,
+        insertions: memetic.steps.len(),
+        scans: memetic.scans + 1,
+        scan_candidates_after,
+        actual_improving_after,
+        lm_converged,
+        min_thickness_nm,
+    };
+    result.best_genome = best_genome;
+    result.decoded = decoded;
+    result.stack = stack;
+    result.merit = merit;
+    Ok((result, report))
+}
+
+/// Run Recipe A and immediately apply its terminal memetic finish.
+pub fn run_recipe_a_finished(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &mut FitnessEvaluator,
+    cfg: &RecipeAConfig,
+    operator: &MemeticOperator,
+    max_insertions: usize,
+) -> Result<(RecipeAResult, TerminalReport), String> {
+    let result = run_recipe_a(decoder, template, evaluator, cfg)?;
+    finish_recipe_a(
+        decoder,
+        template,
+        evaluator,
+        result,
+        operator,
+        max_insertions,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use navette::smatrix::angle::Radians;
+    use navette::smatrix::synthesis::cycle::NeedleCycleConfig;
     use navette::smatrix::synthesis::merit::{
         ConstraintKind, CurveId, MeritKey, MeritSpec, MeritTarget, SimTransform,
     };
+    use navette::smatrix::synthesis::pipeline::SpectralInputs;
     use navette::smatrix::synthesis::structure::LayerSpec;
 
     use crate::bridge::{BoundaryRules, EvaluatorOptions};
@@ -734,5 +891,57 @@ mod tests {
             evaluator.evaluate(&result.best.stack).unwrap(),
             result.best.merit
         );
+    }
+
+    #[test]
+    fn terminal_finish_writes_back_and_clears_the_scan_certificate() {
+        let pool = MaterialPool::new(vec![
+            Material::new("H", 20.0, 200.0).unwrap(),
+            Material::new("L", 10.0, 150.0).unwrap(),
+        ])
+        .unwrap();
+        let decoder = Decoder::without_constraints(pool).unwrap();
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0),
+            constant("substrate", 1.52, 0.0),
+            vec![constant("H", 2.2, 0.0), constant("L", 1.46, 0.0)],
+        )
+        .unwrap();
+        let spec = zero_spec();
+        let evaluator = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            spec.clone(),
+            EvaluatorOptions::default(),
+        )
+        .unwrap();
+        let cfg = RecipeAConfig {
+            population_size: 8,
+            generations: 3,
+            max_layers: 20,
+            mutation_sigma: 0.2,
+            seed: Some(21),
+        };
+        let result = run_recipe_a(&decoder, &template, &evaluator, &cfg).unwrap();
+        let spectral = SpectralInputs::from_spec(&spec, &[Radians::ZERO], &[550.0]).unwrap();
+        let operator = MemeticOperator::new(
+            spectral,
+            navette::smatrix::synthesis::cycle::MaterialPool::new(),
+            NeedleCycleConfig {
+                max_needles: 4,
+                scan_step_nm: 10.0,
+                ..NeedleCycleConfig::default()
+            },
+        );
+        let mut ev = evaluator;
+        let (finished, report) =
+            finish_recipe_a(&decoder, &template, &mut ev, result, &operator, 4).unwrap();
+
+        assert_eq!(finished.best_genome.len(), decoder.max_layers());
+        assert_eq!(finished.decoded.len(), finished.stack.films().len());
+        assert_eq!(report.actual_improving_after, 0);
+        assert_eq!(report.final_merit, finished.merit);
+        assert_eq!(ev.evaluate(&finished.stack).unwrap(), finished.merit);
+        assert!(report.min_thickness_nm >= 0.0);
     }
 }

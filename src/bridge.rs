@@ -13,6 +13,7 @@
 
 use std::sync::Arc;
 
+use navette::lsq::backends::LsqResult;
 use navette::lsq::lm::LmConfig;
 use navette::smatrix::angle::Radians;
 use navette::smatrix::synthesis::config::ThinLayerPolicy;
@@ -430,6 +431,18 @@ impl FitnessEvaluator {
         self.ctx.refine_thicknesses(stack)
     }
 
+    /// Bounded LM finish plus the solver's termination report.
+    ///
+    /// `None` means there was nothing to optimize (no free films); otherwise
+    /// `LsqResult::termination` says whether the run converged or hit a
+    /// budget/stall. This is the certificate hook for a terminal memetic step.
+    pub fn refine_report(
+        &mut self,
+        stack: &mut DesignStack,
+    ) -> Result<(f64, Option<LsqResult>), String> {
+        self.ctx.refine_thicknesses_report(stack)
+    }
+
     pub fn simulate(&self, stack: &DesignStack) -> Result<SimCurves, String> {
         self.ctx.simulate(stack)
     }
@@ -505,6 +518,12 @@ impl MemeticOperator {
     }
 
     /// Apply at most `max_insertions` scan/insert/polish steps.
+    ///
+    /// A candidate is accepted only after a trial insertion and a real merit
+    /// evaluation shows an improvement. The analytic P sweep is a predictor;
+    /// accepting it untested could make the stack worse when several
+    /// candidates interact. The first candidate in scan order that passes the
+    /// trial is inserted; if none passes, the loop stops.
     pub fn apply(
         &self,
         evaluator: &mut FitnessEvaluator,
@@ -522,12 +541,23 @@ impl MemeticOperator {
             let scan =
                 stack.needle_scan(evaluator.context(), &self.spectral, &self.pool, &self.cfg)?;
             report.scans += 1;
-            let Some(best) = scan.best() else { break };
-            if !best.is_improving() {
-                break;
+            let mut accepted = None;
+            for candidate in &scan.candidates {
+                if !candidate.is_improving() {
+                    break;
+                }
+                let mut trial = stack.clone();
+                trial.insert_needle_candidate(&self.pool, candidate)?;
+                let merit = evaluator.evaluate(&trial)?;
+                if merit < scan.current_merit {
+                    accepted = Some((candidate.clone(), merit));
+                    break;
+                }
             }
-            let insertion = stack.insert_needle_candidate(&self.pool, best)?;
-            let merit_after_insert = evaluator.evaluate(stack)?;
+            let Some((candidate, merit_after_insert)) = accepted else {
+                break;
+            };
+            let insertion = stack.insert_needle_candidate(&self.pool, &candidate)?;
             let polish = stack.polish_needles(evaluator.context_mut(), self.polish.clone())?;
             report.steps.push(MemeticStep {
                 insertion,

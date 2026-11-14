@@ -36,7 +36,9 @@ navette = { version = "0.10.0", path = "../Navette/rust/navette", features = [
     "opt-basin",
 ] }
 # Evolutionary core (dependency in Phases 0-2; §1.1-gated copy source in Phase 3).
-genetic_algorithms = "=3.0.0"
+# `parallel` is off for deterministic seeded ledgers; navette still batches
+# evaluations through its own Rayon door (A3).
+genetic_algorithms = { version = "=3.0.0", default-features = false, features = ["logging"] }
 # Key mutation for the custom three-key chromosome.
 rand = "0.9"
 # QD archive base (dependency now; fork base for F1 MOME).
