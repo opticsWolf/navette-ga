@@ -48,6 +48,54 @@ pub fn joint_gap_accepts(
     pool.gap_accepts_needle(envs, stacks, gap, needle)
 }
 
+/// Insert a needle at a joint boundary locus and return the new slot plus
+/// the K expanded assemblies.
+///
+/// The acceptance query runs first on the current design, so a film the
+/// joint rule refuses is never inserted. On success the film is inserted
+/// into every environment's template and the primary design stack, as a
+/// new shared design slot; the routing table shifts with it. The caller
+/// must pass a `design` that is the primary (environment 0) stack of
+/// `envs`.
+pub fn joint_gap_insert(
+    envs: &mut CompiledEnvironments,
+    design: &mut DesignStack,
+    pool: &MaterialPool,
+    gap: Gap,
+    needle: usize,
+    d_nm: f64,
+) -> Result<(usize, Vec<DesignStack>), String> {
+    if !(d_nm.is_finite() && d_nm > 0.0) {
+        return Err(format!(
+            "joint gap insertion: needle thickness must be positive and finite (got {d_nm} nm)"
+        ));
+    }
+    let current = envs.expand(design)?;
+    if !joint_gap_accepts(envs, &current, pool, gap, needle)? {
+        return Err(format!(
+            "joint gap insertion: pool entry {needle:?} is not accepted at gap {gap:?}"
+        ));
+    }
+    let mut film = pool[needle].clone();
+    film.d_nm = d_nm;
+    film.coherent = true;
+    film.rough_type = 0;
+    film.rough_val = 0.0;
+    film.optimize = true;
+    film.needle = true;
+    // Both objects are replaced only after the design and every template
+    // have accepted the film; a slice or routing refusal leaves the caller
+    // with the original state.
+    let mut trial_envs = envs.clone();
+    let mut trial_design = design.clone();
+    trial_envs.boundary_design(&mut trial_design, gap, &film)?;
+    let slot = trial_envs.insert_boundary(gap, &film)?;
+    let stacks = trial_envs.expand(&trial_design)?;
+    *envs = trial_envs;
+    *design = trial_design;
+    Ok((slot, stacks))
+}
+
 /// A material-boundary contract for a stack template.
 ///
 /// Reuses navette's `InsertRules` (host label -> accepted needle labels) and
@@ -799,7 +847,7 @@ mod tests {
                 })
                 .collect(),
         };
-        let (envs, pool, warnings) = build_environments(&request, &[550.0]).unwrap();
+        let (mut envs, pool, warnings) = build_environments(&request, &[550.0]).unwrap();
         assert!(warnings.is_empty(), "{warnings:?}");
         assert_eq!(envs.n_envs(), 2);
         let stacks = envs.expand(&envs.stacks()[0]).unwrap();
@@ -824,6 +872,19 @@ mod tests {
             .map(|stack| stack.films().iter().map(|film| film.d_nm).collect())
             .collect();
         assert_eq!(after, thicknesses, "a gap query must not move a film");
+
+        let mut design = envs.stacks()[0].clone();
+        let insertion_gap = Gap { seg: 0, k: 1 };
+        let (slot, inserted) =
+            joint_gap_insert(&mut envs, &mut design, &pool, insertion_gap, g, 25.0).unwrap();
+        assert_eq!(slot, 1);
+        assert_eq!(inserted.len(), 2);
+        for stack in &inserted {
+            assert_eq!(stack.films().len(), 3);
+            assert_eq!(stack.films()[1].d_nm, 25.0);
+            assert_eq!(stack.films()[1].material.as_ref(), "G");
+        }
+        assert!(!joint_gap_accepts(&envs, &inserted, &pool, insertion_gap, g).unwrap());
     }
 
     #[test]
