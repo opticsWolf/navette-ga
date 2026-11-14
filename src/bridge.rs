@@ -17,14 +17,81 @@ use navette::lsq::lm::LmConfig;
 use navette::smatrix::angle::Radians;
 use navette::smatrix::synthesis::config::ThinLayerPolicy;
 use navette::smatrix::synthesis::context::DesignContext;
-use navette::smatrix::synthesis::cycle::{Insertion, MaterialPool, NeedleCycleConfig};
+use navette::smatrix::synthesis::cycle::{
+    InsertRules, Insertion, MaterialPool, NeedleCycleConfig, NeedleRules,
+};
 use navette::smatrix::synthesis::evaluator::SmatrixContext;
 use navette::smatrix::synthesis::merit::{MeritSpec, SimCurves};
 use navette::smatrix::synthesis::pipeline::SpectralInputs;
 use navette::smatrix::synthesis::staged::{PolishReport, PolishScope};
-use navette::smatrix::synthesis::structure::{ClampReport, DesignStack, LayerSpec};
+use navette::smatrix::synthesis::structure::{ClampReport, DesignStack, EdgeMaterials, LayerSpec};
 
 use crate::decoder::DecodedStack;
+
+/// A material-boundary contract for a stack template.
+///
+/// Reuses navette's `InsertRules` (host label -> accepted needle labels) and
+/// its outer/inner edge lists. `seed_edges` is deliberately absent: it inserts
+/// a film and changes the decoded layer count, so the seed-or-pin decision is
+/// Phase 2 of E09 v2 §2.4.1.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BoundaryRules {
+    /// Host label -> the labels of needles it accepts. `None`: unrestricted.
+    pub insert: Option<InsertRules>,
+    /// Allowed materials (template labels) of the ambient-side film.
+    pub outer: Option<Vec<String>>,
+    /// Allowed materials (template labels) of the substrate-side film.
+    pub inner: Option<Vec<String>>,
+}
+
+impl BoundaryRules {
+    /// No insert or edge restriction.
+    pub fn is_free(&self) -> bool {
+        self.insert.is_none() && self.outer.is_none() && self.inner.is_none()
+    }
+
+    /// Reuse a navette [`NeedleRules`] value. Edge seeding is refused here;
+    /// it is not a Phase 1 feature.
+    pub fn from_needle_rules(rules: NeedleRules) -> Result<Self, String> {
+        if rules.seed_edges.is_some() {
+            return Err(
+                "boundary rules: seed_edges is deferred to Phase 2; use decoder pins \
+                 for the initial edge material"
+                    .into(),
+            );
+        }
+        Ok(Self {
+            insert: rules.insert,
+            outer: rules.outer,
+            inner: rules.inner,
+        })
+    }
+
+    /// Resolve every label and reject structurally impossible rules before a
+    /// template is built. An empty edge list is rejected because no film can
+    /// satisfy it.
+    pub fn validate(&self, materials: &[LayerSpec]) -> Result<(), String> {
+        if self.is_free() {
+            return Ok(());
+        }
+        for (which, list) in [("outer", &self.outer), ("inner", &self.inner)] {
+            if list.as_ref().is_some_and(|l| l.is_empty()) {
+                return Err(format!(
+                    "boundary rules: the {which} edge list is empty; \
+                     omit it or name at least one material"
+                ));
+            }
+        }
+        let pool = MaterialPool::from(materials.to_vec());
+        if let Some(rules) = &self.insert {
+            pool.clone().with_insert_rules(rules)?;
+        }
+        if self.outer.is_some() || self.inner.is_some() {
+            pool.edge_materials(self.outer.as_deref(), self.inner.as_deref())?;
+        }
+        Ok(())
+    }
+}
 
 /// A material pool plus the fixed ambient/substrate half-spaces.
 ///
@@ -37,6 +104,7 @@ pub struct StackTemplate {
     pub ambient: LayerSpec,
     pub substrate: LayerSpec,
     pub materials: Vec<LayerSpec>,
+    boundary: BoundaryRules,
 }
 
 impl StackTemplate {
@@ -77,7 +145,34 @@ impl StackTemplate {
             ambient,
             substrate,
             materials,
+            boundary: BoundaryRules::default(),
         })
+    }
+
+    /// Attach validated material-boundary rules.
+    pub fn with_boundary_rules(mut self, rules: BoundaryRules) -> Result<Self, String> {
+        rules.validate(&self.materials)?;
+        self.boundary = rules;
+        Ok(self)
+    }
+
+    /// Attach the rule subset of navette's [`NeedleRules`]. `seed_edges` is
+    /// refused; see [`BoundaryRules::from_needle_rules`].
+    pub fn with_needle_rules(self, rules: NeedleRules) -> Result<Self, String> {
+        self.with_boundary_rules(BoundaryRules::from_needle_rules(rules)?)
+    }
+
+    pub fn boundary_rules(&self) -> &BoundaryRules {
+        &self.boundary
+    }
+
+    /// Resolve the configured edge lists against the template materials.
+    pub fn edge_materials(&self) -> Result<EdgeMaterials, String> {
+        let pool = MaterialPool::from(self.materials.clone());
+        pool.edge_materials(
+            self.boundary.outer.as_deref(),
+            self.boundary.inner.as_deref(),
+        )
     }
 
     /// Build a navette stack from decoded layers.
@@ -102,16 +197,25 @@ impl StackTemplate {
             }
             films.push(film);
         }
-        DesignStack::with_films(self.ambient.clone(), self.substrate.clone(), films)
+        let mut stack =
+            DesignStack::with_films(self.ambient.clone(), self.substrate.clone(), films)?;
+        if self.boundary.outer.is_some() || self.boundary.inner.is_some() {
+            stack.set_edge_materials(self.edge_materials()?)?;
+        }
+        Ok(stack)
     }
 
-    /// The template materials as a needle pool.
+    /// The template materials as a needle pool with the insert rules applied.
     ///
     /// Pool entries are the same `LayerSpec`s; their thickness and flags are
     /// ignored by the needle pass, which only reads material label, nk and
     /// label/insert rules.
-    pub fn needle_pool(&self) -> MaterialPool {
-        MaterialPool::from(self.materials.clone())
+    pub fn needle_pool(&self) -> Result<MaterialPool, String> {
+        let pool = MaterialPool::from(self.materials.clone());
+        match &self.boundary.insert {
+            Some(rules) => pool.with_insert_rules(rules),
+            None => Ok(pool),
+        }
     }
 }
 
@@ -282,6 +386,17 @@ impl MemeticOperator {
         }
     }
 
+    /// Build the operator from a template, so the template's insert rules are
+    /// applied to the needle pool. Equivalent to `new` with
+    /// [`StackTemplate::needle_pool`].
+    pub fn from_template(
+        spectral: SpectralInputs,
+        template: &StackTemplate,
+        cfg: NeedleCycleConfig,
+    ) -> Result<Self, String> {
+        Ok(Self::new(spectral, template.needle_pool()?, cfg))
+    }
+
     /// Scan the current stack through the A1 stage.
     pub fn scan(
         &self,
@@ -444,6 +559,158 @@ mod tests {
 
         assert!((stack.films()[0].d_nm - d_nm).abs() < 1e-12);
         assert!(reflectance(&stack) < 1e-24);
+    }
+
+    #[test]
+    fn boundary_rules_reject_bad_labels_and_seed_edges() {
+        let template = || {
+            StackTemplate::new(
+                constant("air", 1.0, 0.0, 1),
+                constant("substrate", 1.52, 0.0, 1),
+                vec![constant("H", 2.2, 0.0, 1), constant("L", 1.46, 0.0, 1)],
+            )
+            .unwrap()
+        };
+        let bad_insert = BoundaryRules {
+            insert: Some(
+                [("H".to_string(), vec!["Z".to_string()])]
+                    .into_iter()
+                    .collect(),
+            ),
+            ..BoundaryRules::default()
+        };
+        assert!(template().with_boundary_rules(bad_insert).is_err());
+
+        let bad_edge = BoundaryRules {
+            outer: Some(vec!["Z".to_string()]),
+            ..BoundaryRules::default()
+        };
+        assert!(template().with_boundary_rules(bad_edge).is_err());
+
+        let empty_edge = BoundaryRules {
+            outer: Some(Vec::new()),
+            ..BoundaryRules::default()
+        };
+        assert!(template().with_boundary_rules(empty_edge).is_err());
+
+        let seeded = navette::smatrix::synthesis::cycle::NeedleRules {
+            seed_edges: Some(5.0),
+            ..navette::smatrix::synthesis::cycle::NeedleRules::default()
+        };
+        assert!(BoundaryRules::from_needle_rules(seeded).is_err());
+    }
+
+    #[test]
+    fn boundary_rules_apply_to_pool_and_assembled_edges() {
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0, 1),
+            constant("substrate", 1.52, 0.0, 1),
+            vec![
+                constant("H", 2.2, 0.0, 1),
+                constant("L", 1.46, 0.0, 1),
+                constant("G", 1.8, 0.0, 1),
+            ],
+        )
+        .unwrap();
+        let rules = BoundaryRules {
+            insert: Some(
+                [
+                    ("H".to_string(), vec!["L".to_string()]),
+                    ("L".to_string(), Vec::new()),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+            outer: Some(vec!["H".to_string()]),
+            inner: Some(vec!["L".to_string()]),
+        };
+        let template = template.with_boundary_rules(rules).unwrap();
+
+        let pool = template.needle_pool().unwrap();
+        assert_eq!(pool.len(), 3);
+        let edges = template.edge_materials().unwrap();
+        assert_eq!(edges.outer.as_ref().unwrap()[0].0.as_ref(), "H");
+        assert_eq!(edges.inner.as_ref().unwrap()[0].0.as_ref(), "L");
+
+        let decoder_pool = MaterialPool::new(vec![
+            Material::new("H", 20.0, 300.0).unwrap(),
+            Material::new("L", 10.0, 200.0).unwrap(),
+        ])
+        .unwrap();
+        let decoder = Decoder::without_constraints(decoder_pool).unwrap();
+        let good = decoder
+            .decode(&Genome::from(vec![
+                LayerGene::new(0.1, 0.5, 0.9),
+                LayerGene::new(0.9, 0.5, 0.9),
+            ]))
+            .unwrap();
+        let stack = template.assemble(&good).unwrap();
+        assert!(!stack.edge_materials().is_free());
+        assert_eq!(
+            stack.edge_materials().outer.as_ref().unwrap()[0].0.as_ref(),
+            "H"
+        );
+        assert_eq!(
+            stack.edge_materials().inner.as_ref().unwrap()[0].0.as_ref(),
+            "L"
+        );
+
+        let bad = decoder
+            .decode(&Genome::from(vec![
+                LayerGene::new(0.9, 0.5, 0.9),
+                LayerGene::new(0.1, 0.5, 0.9),
+            ]))
+            .unwrap();
+        assert!(template.assemble(&bad).is_err());
+    }
+
+    #[test]
+    fn boundary_rules_restrict_the_memetic_scan() {
+        let spec = zero_reflectance_spec(0.0, 550.0);
+        let ev = evaluator(spec.clone());
+        let stack = fixed_stack(
+            vec![constant("H", 2.2, 80.0, 1), constant("L", 1.46, 120.0, 1)],
+            1,
+        );
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0, 1),
+            constant("substrate", 1.52, 0.0, 1),
+            vec![
+                constant("H", 2.2, 0.0, 1),
+                constant("L", 1.46, 0.0, 1),
+                constant("G", 1.8, 0.0, 1),
+            ],
+        )
+        .unwrap();
+        let rules = BoundaryRules {
+            insert: Some(
+                [
+                    ("H".to_string(), vec!["L".to_string()]),
+                    ("L".to_string(), Vec::new()),
+                    ("G".to_string(), Vec::new()),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+            ..BoundaryRules::default()
+        };
+        let template = template.with_boundary_rules(rules).unwrap();
+        let spectral = SpectralInputs::from_spec(&spec, &[Radians::ZERO], &[550.0]).unwrap();
+        let cfg = NeedleCycleConfig {
+            max_needles: 1,
+            scan_step_nm: 10.0,
+            ..NeedleCycleConfig::default()
+        };
+        let op = MemeticOperator::from_template(spectral, &template, cfg).unwrap();
+        let scan = op.scan(&ev, &stack).unwrap();
+
+        assert!(!scan.is_empty(), "{scan:?}");
+        assert!(
+            scan.candidates
+                .iter()
+                .all(|candidate| candidate.material.as_ref() == "L"),
+            "{scan:?}"
+        );
     }
 
     #[test]

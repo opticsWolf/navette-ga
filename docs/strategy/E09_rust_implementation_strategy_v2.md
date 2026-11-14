@@ -34,9 +34,8 @@ amendments are implemented by the owner, never requested.*
   local-path-only until a navette release carries them; `cargo publish` is
   expected to fail verification meanwhile.
 - **Remaining:** A2 (Jacobian/merit introspection), A4 (native bounds/grammar
-  API), the §2.4.1 material-boundary investigation (insert/edge rules,
-  boundary needles, grammar interaction), variable-length insertion/deletion
-  operators, and the Phase 2 island driver.
+  API), Phase 2 of §2.4.1 (boundary needles, seed-or-pin, grammar truth table),
+  variable-length insertion/deletion operators, and the Phase 2 island driver.
 
 ## 0. What navette already is (and why the strategy collapses around it)
 
@@ -184,50 +183,49 @@ factor). (b) *Native per-step (A1 implemented by the owner per the schedule in
 an order of magnitude less overhead per memetic step. V30 scope respected:
 needle steps refine proximity designs mid-loop; cold growth stays stochastic.
 
-**2.4.1 Material-boundary rules (investigation; bridge + decoder).** Navette
-already exposes the mechanism this crate needs: `InsertRules` maps a host
-label to the labels of needles it accepts, `MaterialPool::with_insert_rules`
+**2.4.1 Material-boundary rules (Phase 1 implemented; Phase 2 investigation).**
+Navette already exposes the mechanism this crate needs: `InsertRules` maps a
+host label to the labels of needles it accepts, `MaterialPool::with_insert_rules`
 turns that into the per-host matrix, `NeedleRules { insert, outer, inner,
 seed_edges }` applies it to a design and sets the `EdgeMaterials`, and
 `boundary_accepts`/`gap_accepts` enforce the rules at interior, boundary, and
 shared-design loci. This is the "needle material boundary" to reuse, not
 re-invent.
 
-The current `navette-ga` bridge leaves it unused: `StackTemplate::needle_pool`
-builds an unrestricted pool, `assemble` labels films but never calls
-`set_edge_materials`, and `AdjacencyGrammar` is an independent
-neighbour-to-neighbour constraint. The investigation has six parts:
+**Phase 1 (implemented).** `StackTemplate` carries a validated `BoundaryRules`
+(`insert`, `outer`, `inner`; `seed_edges` is refused). Construction resolves
+every label and rejects empty edge lists. `assemble` sets the edge materials
+and errors when the decoded first/last films are not on their lists;
+`needle_pool` applies the host→needle matrix, and
+`MemeticOperator::from_template` uses that pool. No second insert matrix is
+stored. Tests cover unknown/empty labels, assembled-edge compliance, and a
+memetic scan restricted to the allowed needle material.
 
-1. **Carry the rules once.** Put `insert`, `outer`, `inner`, and `seed_edges`
-   on a bridge-level `BoundaryRules` resolved against `StackTemplate.materials`
-   (unique labels, validated at construction). `assemble` sets the edge
-   materials and `needle_pool` calls `with_insert_rules`; no second insert
-   matrix is stored or re-derived.
-2. **Edge lists vs decoder pins.** The decoder pins fix a material index in
-   the genome; navette's edge lists constrain the built stack. Use both and
-   make a contradiction a construction error. Decide whether `seed_edges` is
+The remaining investigation has five parts:
+
+1. **Edge lists vs decoder pins.** The decoder pins fix a material index in
+   the genome; navette's edge lists constrain the built stack. Phase 1 makes a
+   contradiction an assembly error. Phase 2 decides whether `seed_edges` is
    allowed (it inserts a film and changes the decoded layer count) or is
    replaced by decoder pins; a GA run must not silently gain a layer.
-3. **Grammar interaction.** `InsertRules` is host → needle, not
+2. **Grammar interaction.** `InsertRules` is host → needle, not
    neighbour → neighbour. Do not mechanically derive `AdjacencyGrammar` from
    it. Test the three candidate relations: (a) independent, with insert rules
    gating only the memetic operator; (b) grammar as a conservative superset;
    (c) grammar derived from insert rules plus edge lists. Choose one, record
    the direction, and assert every decoded stack the memetic operator can edit
    is legal under both.
-4. **Boundary needles.** Enable `boundary_needles` and verify the staged
+3. **Boundary needles.** Enable `boundary_needles` and verify the staged
    `scan`/`insert` apply `accepts_site` (flat) and `gap_accepts` (joint); a
    polish or cleanup step must not move an edge off its list or create a
    forbidden neighbour.
-5. **Evidence.** Use a matrix such as `H → [L]`, `L → []`, outer `[H]`, inner
-   `[L]`; assert no forbidden scan candidate or boundary insertion, exercise
-   `seed_edges` and contradiction diagnostics, cover a multi-environment gap,
-   and compare with `run_needle_cycles` under the same `NeedleRules`. A
-   diffusion-barrier / edge-layer filter is the acceptance case; no-rules runs
-   stay bit-identical.
-6. **Scope.** Phase 1 carries the rules, applies them to pool + edges, and
-   validates decoded stacks (no seeding). Phase 2 adds boundary needles, joint
-   gaps, the seed-or-pin decision, and the grammar truth table.
+4. **Evidence.** Phase 1 covers label resolution, empty/unknown edge lists,
+   assembled edges, and a restricted scan. Phase 2 adds `seed_edges` and
+   contradiction diagnostics, a multi-environment gap, equivalence with
+   `run_needle_cycles` under the same `NeedleRules`, and a diffusion-barrier /
+   edge-layer filter as the acceptance case; no-rules runs stay bit-identical.
+5. **Scope.** Phase 1 is complete. Phase 2 adds boundary needles, joint gaps,
+   the seed-or-pin decision, and the grammar truth table.
 
 **2.5 MOO split-off.** `moors` builders with fitness closures over the G1
 bridge; objectives (merit, N, total thickness, robustness perturbation,
@@ -411,7 +409,7 @@ stands on E00 picks.
 - **Phase 2 — Recipe B core (month):** heterogeneous islands/tribes under the
   §2.8.1 island policy (ring, k=10, one best migrant,
   best-replace-worst-if-better with legality repair), G4(a) needle-memetic,
-  §2.4.1 boundary rules (boundary needles, seed-or-pin, grammar truth table),
+  Phase 2 of §2.4.1 (boundary needles, seed-or-pin, grammar truth table),
   dynamic parsimony, moors split (S6), rung-3 pool, H0 control arm running in
   parallel (review G1/R6: if the control wins at equal compute, S2–S4 narrow
   to refinement machinery honestly). Exit: 40-layer filter + merit-vs-depth

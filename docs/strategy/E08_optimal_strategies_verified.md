@@ -17,9 +17,11 @@ crate claims ("only X does Y") mean "among surveyed crates", not the world.*
   (licensing/copy gate). The pre-v2 E09/E10 drafts were stale and have been removed.
 - **Architecture:** one `navette-ga` crate, LGPL-3.0-or-later, with `ga::*` modules;
   navette 0.10.0 owns optics, merit, needle, and LM. A5 is resolved.
-- **Next implementation investigation:** reuse navette's `NeedleRules`
-  (`InsertRules` host→needle map plus outer/inner edge lists) in the bridge and
-  decoder; see E09 v2 §2.4.1. It is a data contract, not a second adjacency
+- **Material-boundary Phase 1:** `StackTemplate` now carries navette-style
+  `BoundaryRules` (`InsertRules` host→needle map plus outer/inner edge lists);
+  assembled stacks validate their edges and the memetic pool honors the insert
+  matrix. Phase 2 still decides seed-or-pin, boundary needles, and the grammar
+  truth table (E09 v2 §2.4.1). It is a data contract, not a second adjacency
   grammar.
 - **Review status:** 21 findings / 11 gaps / 11 risks (round 1: 19/10/10; round 2 adds
   E15/E16/G11/R11). S1–S10 remain the strategy spine; certification is the C2
