@@ -17,8 +17,11 @@ use navette::lsq::lm::LmConfig;
 use navette::smatrix::angle::Radians;
 use navette::smatrix::synthesis::config::ThinLayerPolicy;
 use navette::smatrix::synthesis::context::DesignContext;
+use navette::smatrix::synthesis::cycle::{Insertion, MaterialPool, NeedleCycleConfig};
 use navette::smatrix::synthesis::evaluator::SmatrixContext;
 use navette::smatrix::synthesis::merit::{MeritSpec, SimCurves};
+use navette::smatrix::synthesis::pipeline::SpectralInputs;
+use navette::smatrix::synthesis::staged::{PolishReport, PolishScope};
 use navette::smatrix::synthesis::structure::{ClampReport, DesignStack, LayerSpec};
 
 use crate::decoder::DecodedStack;
@@ -100,6 +103,15 @@ impl StackTemplate {
             films.push(film);
         }
         DesignStack::with_films(self.ambient.clone(), self.substrate.clone(), films)
+    }
+
+    /// The template materials as a needle pool.
+    ///
+    /// Pool entries are the same `LayerSpec`s; their thickness and flags are
+    /// ignored by the needle pass, which only reads material label, nk and
+    /// label/insert rules.
+    pub fn needle_pool(&self) -> MaterialPool {
+        MaterialPool::from(self.materials.clone())
     }
 }
 
@@ -226,6 +238,93 @@ impl FitnessEvaluator {
 
     pub fn context_mut(&mut self) -> &mut SmatrixContext {
         &mut self.ctx
+    }
+}
+
+/// G4(b): the A1 needle stages as a memetic operator.
+///
+/// One step is: scan the current stack, insert the best improving candidate,
+/// then run a bounded LM polish. The operator never runs the macro-loop's
+/// internal insertion cycle; it is the composable version the GA calls.
+#[derive(Clone, Debug)]
+pub struct MemeticOperator {
+    pub spectral: SpectralInputs,
+    pub pool: MaterialPool,
+    pub cfg: NeedleCycleConfig,
+    /// Which free films the polish step may move.
+    pub polish: PolishScope,
+}
+
+/// One insertion and its polish.
+#[derive(Clone, Debug)]
+pub struct MemeticStep {
+    pub insertion: Insertion,
+    pub merit_after_insert: f64,
+    pub polish: PolishReport,
+}
+
+/// What a memetic call did.
+#[derive(Clone, Debug, Default)]
+pub struct MemeticReport {
+    pub initial_merit: f64,
+    pub final_merit: f64,
+    pub scans: usize,
+    pub steps: Vec<MemeticStep>,
+}
+
+impl MemeticOperator {
+    pub fn new(spectral: SpectralInputs, pool: MaterialPool, cfg: NeedleCycleConfig) -> Self {
+        Self {
+            spectral,
+            pool,
+            cfg,
+            polish: PolishScope::All,
+        }
+    }
+
+    /// Scan the current stack through the A1 stage.
+    pub fn scan(
+        &self,
+        evaluator: &FitnessEvaluator,
+        stack: &DesignStack,
+    ) -> Result<navette::smatrix::synthesis::staged::NeedleScan, String> {
+        stack.needle_scan(evaluator.context(), &self.spectral, &self.pool, &self.cfg)
+    }
+
+    /// Apply at most `max_insertions` scan/insert/polish steps.
+    pub fn apply(
+        &self,
+        evaluator: &mut FitnessEvaluator,
+        stack: &mut DesignStack,
+        max_insertions: usize,
+    ) -> Result<MemeticReport, String> {
+        let initial_merit = evaluator.evaluate(stack)?;
+        let mut report = MemeticReport {
+            initial_merit,
+            final_merit: initial_merit,
+            ..MemeticReport::default()
+        };
+
+        for _ in 0..max_insertions {
+            let scan =
+                stack.needle_scan(evaluator.context(), &self.spectral, &self.pool, &self.cfg)?;
+            report.scans += 1;
+            let Some(best) = scan.best() else { break };
+            if !best.is_improving() {
+                break;
+            }
+            let insertion = stack.insert_needle_candidate(&self.pool, best)?;
+            let merit_after_insert = evaluator.evaluate(stack)?;
+            let polish = stack.polish_needles(evaluator.context_mut(), self.polish.clone())?;
+            report.steps.push(MemeticStep {
+                insertion,
+                merit_after_insert,
+                polish,
+            });
+        }
+
+        report.final_merit = evaluator.evaluate(stack)?;
+        Ok(report)
     }
 }
 
@@ -408,6 +507,36 @@ mod tests {
         let batch = ev.evaluate_batch(&stacks).unwrap();
         let serial: Vec<f64> = stacks.iter().map(|st| ev.evaluate(st).unwrap()).collect();
         assert_eq!(batch, serial);
+    }
+
+    #[test]
+    fn memetic_operator_inserts_and_polishes() {
+        let spec = zero_reflectance_spec(0.0, 550.0);
+        let mut ev = evaluator(spec.clone());
+        let mut stack = fixed_stack(
+            vec![constant("H", 2.2, 80.0, 1), constant("L", 1.46, 120.0, 1)],
+            1,
+        );
+        let pool = navette::smatrix::synthesis::cycle::MaterialPool::from(vec![
+            constant("H", 2.2, 0.0, 1),
+            constant("L", 1.46, 0.0, 1),
+        ]);
+        let spectral = SpectralInputs::from_spec(&spec, &[Radians::ZERO], &[550.0]).unwrap();
+        let cfg = NeedleCycleConfig {
+            max_needles: 1,
+            scan_step_nm: 10.0,
+            ..NeedleCycleConfig::default()
+        };
+        let op = MemeticOperator::new(spectral, pool, cfg);
+        let before = stack.films().len();
+        let report = op.apply(&mut ev, &mut stack, 1).unwrap();
+
+        assert!(report.scans >= 1, "{report:?}");
+        assert!(report.final_merit <= report.initial_merit + 1e-12);
+        assert_eq!(report.steps.len(), 1, "{report:?}");
+        assert!(stack.films().len() > before);
+        let step = &report.steps[0];
+        assert!(step.polish.merit_after <= step.polish.merit_before + 1e-12);
     }
 
     #[test]

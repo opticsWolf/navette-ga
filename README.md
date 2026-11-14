@@ -12,9 +12,10 @@ quality-diversity archives, and the study/proof layer around them.
 (G1) are implemented and tested: variable-length keys, material bounds, edge
 pins, adjacency repair, navette stack assembly, joint-merit evaluation, and
 the LM finish. Closed-form quarter-wave and V-coat checks pass, and the G9
-micro-bench is runnable. The bridge calls A3 batch evaluation from the local
-Navette `dev_ga` checkout; A1/A2/A4 remain. Publishing waits for a navette
-release containing A3. The specification of record is
+micro-bench is runnable. The bridge calls A1 staged needle scan/insert/polish/
+cleanup and A3 batch evaluation from the local Navette `dev_ga` checkout; the
+memetic operator is wired through them. A2/A4 remain. Publishing waits for a
+navette release containing A1/A3. The specification of record is
 [`E09_rust_implementation_strategy_v2.md`](docs/strategy/E09_rust_implementation_strategy_v2.md)
 and [`E10_cherrypick_reassembly_v2.md`](docs/strategy/E10_cherrypick_reassembly_v2.md).
 
