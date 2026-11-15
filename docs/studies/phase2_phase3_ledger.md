@@ -7,13 +7,13 @@ repository, and every limitation is listed rather than inferred away.
 
 ## Environment
 
-- `navette` local `dev_ga` at `c9e964d` (A1/A3, A2 introspection, public
-  joint scan, and the core `ndarray` 0.16 lift).
+- `navette` local `dev_ga` at `5adb40c` (A1/A3, A2 introspection, public
+  joint scan, the core `ndarray` 0.16 lift, and the LM x0-floor fix).
 - `navette-ga` single crate, LGPL-3.0-or-later.
 - `cargo test --all-features`: **81 passed**.
 - `cargo clippy --all-targets --all-features -- -D warnings`: clean.
 - `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features`: clean.
-- `navette` with `ga-introspect`: **801 passed, 1 ignored**.
+- `navette` with `ga-introspect`: **802 passed, 1 ignored**.
 
 ## Review follow-up (2026-11-15)
 
@@ -255,6 +255,37 @@ previous section uses a different chirp and a 10k cap, so the two 40-layer
 numbers are not directly comparable. All five stacks pass the decoder's A4
 check; none is a GA-discovered architecture.
 
+## Phase 2 — needle-grown filter (Recipe B growth)
+
+`examples/phase2_filter_growth.rs` starts from a 10-layer chirped H/L stack
+(5 pairs), refines it, then applies the A1 memetic operator for up to 30
+insertions before a final LM. It is the insertion-heavy counterpart to the
+seeded 40-layer artifact.
+
+```text
+seed merit      13,431,992.654090
+after LM         4,413,542.120515   10 layers
+operator         4 insertions, 5 scans, merit 255,123.721271, 18 layers
+final LM           254,930.958714   18 layers
+passband avg R     1.6721 %
+stopband avg R    94.0613 %
+min thickness      10.000 nm
+production          fail (< 40 layers)
+R(450)=0.000002  R(500)=0.058757  R(550)=0.662993
+R(600)=0.895544  R(700)=0.964255
+```
+
+The operator accepts only individually improving insertions, and it stops
+after four because the next scan has no improving candidate. Growth reaches 18
+layers, not 40; the target still needs the deeper seeded architecture. This is
+a real insertion-heavy result, but not a GA-discovered or 40-layer production
+filter.
+
+The run also exposed a navette start-point bug: an inserted film below the
+10 nm floor was passed to LM as x0, and `ClampUpAlways` rejected it before the
+first iteration. Navette `dev_ga` now clamps x0 to `[lb_floor, clamp_max]`
+(`5adb40c`); the regression test starts at 5 nm under a 10 nm floor.
+
 ## Phase 3 — H0–H7 dispatch and campaign loop
 
 `bench::run_comparison_arm` now dispatches the registry to the engine that
@@ -473,8 +504,8 @@ fixed target, and no family-adjusted pair is significant; the kurobako
 registration is a problem definition; the archive illumination is not
 selection;
 the C00 depth bake is a negative scale signal; the filter depth bake is one
-target and a 5k LM cap; the 40-layer filter is a seeded stack plus LM, not a
-GA discovery; the equal-budget H0/H1 result is five seeds on one target; the
+target and a 5k LM cap; the 40-layer filter is a seeded stack plus LM, and
+the needle-grown path saturates at 18 layers, not a GA discovery; the equal-budget H0/H1 result is five seeds on one target; the
 H7 arm is a mined-seed fallback, not a diffusion implementation; H6 is a
 linear screen, not a GP; navette-native A4 and the released-navette gate
 remain open. The core `ndarray` lift (`c9e964d`) resolves the earlier
