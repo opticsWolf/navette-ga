@@ -84,6 +84,7 @@ examples/
   phase2_filter_depth.rs   # 10/20/30/40/50-layer filter depth bake
   phase2_filter_growth.rs  # needle-grown filter probe (10/20/30-layer starts)
   phase2_campaign.rs       # H0-H7 campaign + ERT + Holm (bench feature)
+  phase2_filter_campaign.rs # filter-fixture H0-H7 check (bench feature)
 docs/
   studies/                 # Phase 1 C00-class AR ledger and run artifacts
   README.md                # research/paper index

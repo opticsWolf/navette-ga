@@ -298,6 +298,30 @@ The run also exposed a navette start-point bug: an inserted film below the
 first iteration. Navette `dev_ga` now clamps x0 to `[lb_floor, clamp_max]`
 (`5adb40c`); the regression test starts at 5 nm under a 10 nm floor.
 
+## Phase 3 — filter cross-fixture campaign (negative)
+
+`examples/phase2_filter_campaign.rs` runs H0/H1/H2/H3/H6/H7 on the steep-edge
+filter fixture with two seeds, 12 individuals, 12 generations, a 40-layer H1
+cap, a 50-layer decoder cap, and a 30,000 target. It is deliberately a small
+budget; the result is a negative cross-fixture check, not a filter win.
+
+| arm | best merit | median merit | median evals | best layers | best pass R | best stop R |
+|---|---:|---:|---:|---:|---:|---:|
+| H0 | 1,940,856.096160 | 4,004,565.279640 | 4,054 | 20 | 10.5380 % | 84.9588 % |
+| H1 | 11,945,236.921251 | 12,672,364.069557 | 157 | 23 | 29.1899 % | 66.9576 % |
+| H2 | 18,572,978.563085 | 22,011,915.921102 | 4,525 | 43 | 67.4369 % | 76.0312 % |
+| H3 | 12,723,657.826156 | 16,576,895.796876 | 177 | 19 | 15.7042 % | 61.5766 % |
+| H6 | 11,945,236.921251 | 12,672,364.069557 | 52 | 23 | 29.1899 % | 66.9576 % |
+| H7 | 9,623,203.927540 | 10,293,105.737320 | 157 | 24 | 48.0990 % | 83.5951 % |
+
+No arm reaches the 30,000 target; every ERT is `none`, and every two-seed
+pair has Holm-adjusted `p = 1.0`. H2 can grow to 43 layers but its passband and
+stopband are both poor; H7's 40-layer seed is eroded to 24 layers without a
+terminal LM. This confirms that the small-budget GA/phased arms do not replace
+the seeded 40-layer + LM artifact on this deep target. The filter fixture needs
+a much larger budget, a different merit schedule, or the terminal finish for
+the seeded arm before it can support a cross-target ranking.
+
 ## Phase 3 — H0–H7 dispatch and campaign loop
 
 `bench::run_comparison_arm` now dispatches the registry to the engine that
