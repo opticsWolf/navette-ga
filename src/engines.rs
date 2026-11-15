@@ -2130,6 +2130,84 @@ fn vl_initial_population(cfg: &VlRecipeAConfig, seed: Option<u64>) -> Population
     Population::new(chromosomes)
 }
 
+/// Run variable-length Recipe A from a mined seed/proposal bank.
+///
+/// This is the H7 fallback path: the first `seed_fraction` of the initial
+/// population is filled from the supplied genomes (cycled if there are fewer
+/// seeds than slots), and the remainder is random. It is deliberately a
+/// seed-bank arm, not a diffusion model; the caller must record where the
+/// seeds came from. Every seed must decode and fit the variable-length bounds
+/// before the run starts.
+pub fn run_recipe_a_vl_seeded(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    cfg: &VlRecipeAConfig,
+    seeds: &[Genome],
+    seed_fraction: f64,
+) -> Result<RecipeAResult, String> {
+    validate_vl_recipe_a(cfg)?;
+    template.check_grammar(decoder.pool(), decoder.grammar())?;
+    if seeds.is_empty() {
+        return Err("seeded Recipe A needs at least one seed".into());
+    }
+    if !seed_fraction.is_finite() || !(0.0..=1.0).contains(&seed_fraction) || seed_fraction == 0.0 {
+        return Err("seeded Recipe A seed_fraction must be in (0, 1]".into());
+    }
+    for (index, seed) in seeds.iter().enumerate() {
+        if seed.len() < cfg.min_layers || seed.len() > cfg.max_layers {
+            return Err(format!(
+                "seed {index} has {} layers, outside [{}, {}]",
+                seed.len(),
+                cfg.min_layers,
+                cfg.max_layers
+            ));
+        }
+        decoder
+            .decode(seed)
+            .map_err(|error| format!("seed {index}: {error}"))?;
+    }
+
+    let seeded_slots = ((cfg.population_size as f64) * seed_fraction).ceil() as usize;
+    let seeded_slots = seeded_slots.clamp(1, cfg.population_size);
+    set_seed(cfg.seed);
+    let mut rng = make_rng();
+    let mut chromosomes = Vec::with_capacity(cfg.population_size);
+    for slot in 0..cfg.population_size {
+        if slot < seeded_slots {
+            let seed = &seeds[slot % seeds.len()];
+            chromosomes.push(LayerChromosome::from_dna(genome_to_dna(seed)));
+        } else {
+            let width = rng.random_range(cfg.min_layers..=cfg.max_layers);
+            let dna = (0..width).map(|_| KeyGene::random(&mut rng)).collect();
+            chromosomes.push(LayerChromosome::from_dna(dna));
+        }
+    }
+
+    let mut ga = build_vl_recipe_a_ga_with(
+        cfg,
+        decoder,
+        template,
+        evaluator,
+        Some(Population::new(chromosomes)),
+        cfg.generations,
+        cfg.seed,
+        None,
+    )?;
+    let best = ga.run().map_err(|e| e.to_string())?.best_chromosome.clone();
+    let best_genome = best.to_genome();
+    let decoded = decoder.decode(&best_genome).map_err(|e| e.to_string())?;
+    let stack = checked_assemble(decoder, template, &decoded)?;
+    let merit = evaluator.evaluate(&stack)?;
+    Ok(RecipeAResult {
+        best_genome,
+        decoded,
+        stack,
+        merit,
+        generations: cfg.generations,
+    })
+}
+
 /// Run Recipe A with a true variable-length chromosome.
 ///
 /// The GA samples lengths in `[min_layers, max_layers]`; its mutation
@@ -3151,6 +3229,63 @@ mod tests {
         let error =
             finish_recipe_a(&decoder, &template, &mut ev, result, &operator, 1).unwrap_err();
         assert!(error.contains("A4 stack check"), "{error}");
+    }
+
+    #[test]
+    fn vl_seeded_recipe_runs_from_a_mined_seed_bank() {
+        let pool = MaterialPool::new(vec![
+            Material::new("H", 20.0, 200.0).unwrap(),
+            Material::new("L", 10.0, 150.0).unwrap(),
+        ])
+        .unwrap();
+        let decoder = Decoder::without_constraints(pool).unwrap();
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0),
+            constant("substrate", 1.52, 0.0),
+            vec![constant("H", 2.2, 0.0), constant("L", 1.46, 0.0)],
+        )
+        .unwrap();
+        let evaluator = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            zero_spec(),
+            EvaluatorOptions {
+                clamp_min_nm: 20.0,
+                clamp_max_nm: 150.0,
+                ..EvaluatorOptions::default()
+            },
+        )
+        .unwrap();
+        let cfg = VlRecipeAConfig {
+            population_size: 6,
+            generations: 2,
+            min_layers: 1,
+            max_layers: 4,
+            mutation_sigma: 0.2,
+            length_penalty: None,
+            seed: Some(41),
+        };
+        let seed = Genome::from(vec![
+            LayerGene::new(0.25, 0.5, 1.0),
+            LayerGene::new(0.75, 0.5, 1.0),
+        ]);
+        let result = run_recipe_a_vl_seeded(
+            &decoder,
+            &template,
+            &evaluator,
+            &cfg,
+            std::slice::from_ref(&seed),
+            0.5,
+        )
+        .unwrap();
+        assert!(result.merit.is_finite());
+        assert!(result.decoded.len() <= cfg.max_layers);
+
+        let long = Genome::from(vec![LayerGene::new(0.25, 0.5, 1.0); 5]);
+        assert!(
+            run_recipe_a_vl_seeded(&decoder, &template, &evaluator, &cfg, &[long], 0.5).is_err()
+        );
+        assert!(run_recipe_a_vl_seeded(&decoder, &template, &evaluator, &cfg, &[], 0.5).is_err());
     }
 
     #[test]

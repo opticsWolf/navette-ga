@@ -10,7 +10,7 @@ repository, and every limitation is listed rather than inferred away.
 - `navette` local `dev_ga` at `c9e964d` (A1/A3, A2 introspection, public
   joint scan, and the core `ndarray` 0.16 lift).
 - `navette-ga` single crate, LGPL-3.0-or-later.
-- `cargo test --all-features`: **74 passed**.
+- `cargo test --all-features`: **75 passed**.
 - `cargo clippy --all-targets --all-features -- -D warnings`: clean.
 - `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features`: clean.
 - `navette` with `ga-introspect`: **801 passed, 1 ignored**.
@@ -260,6 +260,21 @@ are not claimed yet.
 - `moors_split::split` maps `(merit, total thickness, layer count)` into
   `moors`' fast non-dominated sort and returns the fronts.
 
+## Phase 3 — H7 seeded/proposal fallback
+
+`engines::run_recipe_a_vl_seeded` fills the first `seed_fraction` of a
+variable-length Recipe A population from a supplied `Genome` bank and the rest
+randomly. Seeds are validated against the decoder and the VL bounds before the
+run. This is the mined-motif fallback for S8/H7, not a diffusion model: the
+caller must record where the seeds came from.
+
+The C00 example exposes `--seeded`. It uses a three-layer H/L/H motif at
+25 % population share and the same 100-generation config as the other arms. The
+recorded run returned `merit = 16669.222449`, `avg_R = 2.8109 %`, two decoded
+layers, and a zero-improvement terminal scan certificate. This is a seed-bank
+demonstration on one target, not an H7-vs-H1 equal-budget result and not
+evidence that a diffusion proposal is implemented.
+
 ## Phase 3 — I1
 
 `engines::run_recipe_a_i1` keeps the ring and per-generation advance, but at
@@ -289,7 +304,8 @@ Limitations: the kurobako registration is a problem definition, not a full
 H0–H7 dispatch (H6 screening and the H7 seeded proposal arm are not wired);
 the archive illumination is not selection; the C00 depth bake is a negative
 scale signal, not a 40-layer steep-edge filter; the equal-budget H0/H1 result
-is one seed and one target; navette-native A4 and the released-navette gate
-remain open. The core `ndarray` lift (`c9e964d`) resolves the earlier
+is five seeds on one target; the H7 arm is a mined-seed fallback, not a
+diffusion implementation; H6 is still unwired; navette-native A4 and the
+released-navette gate remain open. The core `ndarray` lift (`c9e964d`) resolves the earlier
 navette/moors array-major split; it is a dependency-major change for the next
 navette release.

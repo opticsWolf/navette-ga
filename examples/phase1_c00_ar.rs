@@ -19,10 +19,11 @@ use navette::smatrix::synthesis::merit::{
 use navette::smatrix::synthesis::pipeline::SpectralInputs;
 use navette::smatrix::synthesis::structure::LayerSpec;
 use navette_ga::bridge::{EvaluatorOptions, FitnessEvaluator, MemeticOperator, StackTemplate};
-use navette_ga::decoder::Decoder;
+use navette_ga::decoder::{Decoder, Genome, LayerGene};
 use navette_ga::engines::{
-    compare_h0_and_ga_repeats, finish_recipe_a, run_recipe_a, run_recipe_a_memetic, H0Config,
-    MemeticSchedule, RecipeAConfig, TerminalReport,
+    compare_h0_and_ga_repeats, finish_recipe_a, run_recipe_a, run_recipe_a_memetic,
+    run_recipe_a_vl_seeded, H0Config, MemeticSchedule, RecipeAConfig, TerminalReport,
+    VlRecipeAConfig,
 };
 use navette_ga::materials::{decoder_pool, load_library, stack_template, ThicknessBounds};
 use navette_ga::study::mann_whitney_u;
@@ -72,6 +73,40 @@ fn spec(wavelengths: &[f64]) -> MeritSpec {
     })
     .unwrap();
     spec
+}
+
+fn print_result(
+    evaluator: &FitnessEvaluator,
+    finished: &navette_ga::engines::RecipeAResult,
+    report: &TerminalReport,
+) {
+    let sim = evaluator.simulate(&finished.stack).unwrap();
+    let reflectance = sim.curve(CurveId::Rs).unwrap();
+    let avg_r = reflectance.iter().sum::<f64>() / reflectance.len() as f64;
+    let max_r = reflectance
+        .iter()
+        .copied()
+        .fold(f64::NEG_INFINITY, f64::max);
+    println!("PHASE1_C00_AR");
+    println!("merit={:.9}", finished.merit);
+    println!("avg_R={avg_r:.9}");
+    println!("max_R={max_r:.9}");
+    println!("layers={}", finished.decoded.len());
+    println!("insertions={}", report.insertions);
+    println!("lm_converged={}", report.lm_converged);
+    println!("min_thickness_nm={:.6}", report.min_thickness_nm);
+    println!("scan_candidates_after={}", report.scan_candidates_after);
+    println!("actual_improving_after={}", report.actual_improving_after);
+    println!(
+        "stack={}",
+        finished
+            .stack
+            .films()
+            .iter()
+            .map(|film| format!("{}:{:.3}", film.material, film.d_nm))
+            .collect::<Vec<_>>()
+            .join(",")
+    );
 }
 
 fn main() {
@@ -209,6 +244,40 @@ fn main() {
             "rank_sum_u={:.6} p_value={:.9} exact={}",
             rank_sum.u, rank_sum.p_value, rank_sum.exact
         );
+        return;
+    }
+
+    let seeded = args.iter().any(|arg| arg == "--seeded");
+    if seeded {
+        let vl_cfg = VlRecipeAConfig {
+            population_size: cfg.population_size,
+            generations: cfg.generations,
+            min_layers: 1,
+            max_layers: cfg.max_layers,
+            mutation_sigma: cfg.mutation_sigma,
+            length_penalty: None,
+            seed: cfg.seed,
+        };
+        // Mined three-layer H/L/H motif; this is the H7 seed-bank fallback,
+        // not a diffusion proposal.
+        let seed = Genome::from(vec![
+            LayerGene::new(0.25, 0.3, 1.0),
+            LayerGene::new(0.75, 0.3, 1.0),
+            LayerGene::new(0.25, 0.3, 1.0),
+        ]);
+        let result = run_recipe_a_vl_seeded(
+            &decoder,
+            &template,
+            &evaluator,
+            &vl_cfg,
+            std::slice::from_ref(&seed),
+            0.25,
+        )
+        .unwrap();
+        println!("mode=seeded");
+        let (finished, report): (_, TerminalReport) =
+            finish_recipe_a(&decoder, &template, &mut evaluator, result, &operator, 20).unwrap();
+        print_result(&evaluator, &finished, &report);
         return;
     }
 

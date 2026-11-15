@@ -27,7 +27,7 @@ amendments are implemented by the owner, never requested.*
   `cycle::joint_needle_scan` and the A2 merit gradient (`d9faa79`); `c9e964d` lifts the core to `ndarray` 0.16 so navette, `moors`, and `navette-ga` share one array major.
 - **`navette-ga`:** G2 decoder, G1 bridge, A1 memetic operator, fixed and
   variable-length Recipe A, the Phase 2 ring, and the new Phase 2/3 modules
-  (`moors_split`, `qd`, `study`, `bench`). Full suite: **74 tests**.
+  (`moors_split`, `qd`, `study`, `bench`). Full suite: **75 tests**.
 - **Phase 1 exit artifact:** G3 rung-2 material loader; terminal LM + needle
   finish with Lamarckian write-back and actual-trial scan certificate;
   C00-class ledger at `docs/studies/phase1_c00_ar.md` (8 layers, avg
@@ -51,13 +51,15 @@ amendments are implemented by the owner, never requested.*
   Recipe B filter remains open. The first five-seed equal-solver-budget
   H0/H1 run (2k and 20k evaluations) has H1 ahead at both budgets on this
   fixture; tie-corrected normal-approximation rank-sum p-values are 0.0082 and
-  0.0053. It is fixed-seed evidence, not the final multiplicity-corrected
-  campaign. Details and limits:
+  0.0053. The H7 seed-bank fallback and the C00 depth bake are also recorded.
+  This is fixed-seed evidence, not the final multiplicity-corrected campaign.
+  Details and limits:
   `docs/studies/phase2_phase3_ledger.md`.
 - **Phase 3 evidence:** I1 cross-island multi-parent crossover with
   homogenisation readout; G7 campaign queue/pins/pruner/importance; G8
-  kurobako problem and H0-H7 registry. H6 screening and H7 seeding dispatch
-  are not yet wired.
+  kurobako problem and H0-H7 registry; H7's variable-length seeded/mined-motif
+  fallback (`run_recipe_a_vl_seeded`). H6 screening and the H7 diffusion
+  proposal are not wired.
 - **Release gate:** A1/A3/A2 are not in published navette 0.10.0. The bridge
   is local-path-only until a navette release carries them; `cargo publish` is
   expected to fail verification meanwhile.
