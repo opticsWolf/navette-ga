@@ -43,7 +43,8 @@ crate claims ("only X does Y") mean "among surveyed crates", not the world.*
   the G8 kurobako problem/H0-H7 registry are implemented and tested. Full
   suite: 81 tests. Navette-native A4 and a GA-discovered
   40-layer Recipe B filter remain; H6, the H0-H7 dispatcher, the filter depth
-  bake, and a seeded 40-layer filter artifact exist. Details: `docs/studies/phase2_phase3_ledger.md`.
+  bake, a three-seed H0-H7 campaign, and a seeded 40-layer filter artifact
+  exist. Details: `docs/studies/phase2_phase3_ledger.md`.
 - **Review status:** 21 findings / 11 gaps / 11 risks (round 1: 19/10/10; round 2 adds
   E15/E16/G11/R11). S1–S10 remain the strategy spine; certification is the C2
   scan certificate (P(z)≈0 is A6-only), and S3's migration policy is fixed in

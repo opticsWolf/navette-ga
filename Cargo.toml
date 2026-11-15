@@ -16,6 +16,10 @@ keywords = [
 ]
 categories = ["science"]
 
+[[example]]
+name = "phase2_campaign"
+required-features = ["bench"]
+
 [features]
 default = []
 # kurobako -> rlua 0.17.1 does not compile on rustc 1.100 yet, so the proof

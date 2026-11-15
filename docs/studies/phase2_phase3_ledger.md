@@ -290,6 +290,39 @@ fixture, the campaign test runs H0/H1/H6 over two seeds, the ERT test checks
 the all-success and no-success cases, and the family test checks the Holm
 adjustment. These are infrastructure tests, not a scientific H0–H7 campaign.
 
+## Phase 3 — first fixed-seed H0–H7 campaign
+
+`examples/phase2_campaign.rs` runs all eight arms on the C00 antireflection
+fixture with seeds `20261121..20261123`, population 24, 30 generations, a
+16-layer cap, two islands, and the default H3 schedule (10/2/1). The campaign
+is small and deliberately uses a target (`merit <= 30,000`) fixed before the
+run.
+
+| arm | best merit | median merit | median evals | best avg R | layers |
+|---|---:|---:|---:|---:|---:|
+| H0 | 38,367.862403 | 38,367.862403 | 1,714 | 3.1939 % | 10 |
+| H1 | 10,087.289778 | 22,560.664643 | 745 | 2.0015 % | 4 |
+| H2 | **1,102.636453** | 22,560.503673 | 804 | **0.6255 %** | 7 |
+| H3 | 16,874.347704 | 23,933.932203 | 771 | 2.8235 % | 1 |
+| H4 | 16,915.836768 | 18,191.068420 | 1,489 | 2.8262 % | 1 |
+| H5 | 19,035.854603 | 22,710.897981 | 745 | 2.9958 % | 1 |
+| H6 | 25,282.401153 | 26,011.903557 | **61** | 3.4191 % | 6 |
+| H7 | 16,671.984310 | 16,674.717319 | 745 | 2.8108 % | 2 |
+
+At the fixed 30,000 target, ERT is: H0 `none` (0/3 successes), H1 `745.0`,
+H2 `831.7`, H3 `771.0`, H4 `1,489.0`, H5 `745.0`, H6 `97.0`, H7 `745.0`.
+The H6 number is low because its counter records only true TMM calls; the
+surrogate predictions are not counted. The H2 best is strong but its median
+matches H1, so this is high-variance evidence, not a stable H2 win.
+
+The Holm-adjusted family has 28 pairs. Every adjusted p-value is `1.0`; the
+smallest raw p-value is `0.0463` for H0 against each other arm and does not
+survive the family correction. No pair is significant in this campaign.
+
+This is the dispatch/ERT/Holm pipeline on three seeds, one fixture, and one
+target. It is not the final H0–H7 campaign and does not establish an arm
+ranking.
+
 ## Phase 2 — H0 control
 
 `engines::run_h0_control` runs independent random starts, a bounded LM
@@ -426,9 +459,9 @@ kurobako `Problem` over a fixed Recipe A space: two parameters per layer
 problem uses the same decoder/template/evaluator as the GA, so a solver is
 measured on the same physics.
 
-Limitations: the kurobako registration is a problem definition, and the
-dispatcher/campaign loop has fixed-target ERT plus pairwise Holm, but no
-scientific H0–H7 campaign has been run; the archive illumination is not
+Limitations: the C00 H0–H7 campaign is three seeds on one fixture and one
+fixed target, and no family-adjusted pair is significant; the kurobako
+registration is a problem definition; the archive illumination is not
 selection;
 the C00 depth bake is a negative scale signal; the filter depth bake is one
 target and a 5k LM cap; the 40-layer filter is a seeded stack plus LM, not a
