@@ -45,8 +45,7 @@ the H7 mined-seed fallback and optional proposal expansion. Full suite:
 Limits are explicit: navette-native A4 (per-material bounds and the
 insert/migrate grammar hook), the H7 diffusion proposal, a GA-discovered
 Recipe B filter (the seeded 40-layer artifact and depth bake exist), and the
-full multi-seed H0–H7 campaign remain; a three-seed C00 campaign is
-recorded in the ledger.
+full multi-seed H0–H7 campaign remain; a ten-seed C00 campaign is recorded in the ledger.
 The mid-loop schedule has one C00 overhead measurement, not a controlled arm
 result. Consumer-side A4 is now
 enforced on every GA/terminal/joint path; the earlier C00 ledger was

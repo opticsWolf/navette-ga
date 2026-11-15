@@ -77,9 +77,9 @@ amendments are implemented by the owner, never requested.*
   `run_comparison_campaign` dispatch the H0–H7 registry over fixed seed lists.
   `bench::expected_running_time` adds a fixed-target censored ERT report, and
   `bench::family_rank_sum` applies pairwise Mann–Whitney with Holm correction
-  over the campaign family. A three-seed C00 campaign is recorded in the
-  ledger, but the H7 diffusion proposal and the full multi-seed H0–H7 campaign
-  are not implemented.
+  over the campaign family. A ten-seed C00 campaign is recorded in the ledger;
+  eleven Holm-adjusted pairs survive at 0.05 on that fixture. The H7 diffusion
+  proposal and a multi-fixture H0–H7 campaign are not implemented.
 - **Release gate:** A1/A3/A2 are not in published navette 0.10.0. The bridge
   is local-path-only until a navette release carries them; `cargo publish` is
   expected to fail verification meanwhile.

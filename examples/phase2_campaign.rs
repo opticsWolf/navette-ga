@@ -2,8 +2,9 @@
 //! H0–H7 comparison campaign on the C00 antireflection fixture.
 //!
 //! This runs the eight E09 arms through `bench::run_comparison_campaign` and
-//! prints the fixed-target ERT and Holm-adjusted pairwise rank-sum family. It
-//! is a small fixed-seed campaign, not the final scientific campaign.
+//! prints the fixed-target ERT and Holm-adjusted pairwise rank-sum family.
+//! The default is ten seeds; `--seeds N` and `--target X` override the campaign
+//! size and target. This is fixed-seed evidence, not the final campaign.
 
 use std::collections::BTreeMap;
 
@@ -72,7 +73,22 @@ use navette_ga::bench::{
     expected_running_time, family_rank_sum, run_comparison_campaign, ComparisonArm,
     ComparisonOptions,
 };
+fn option<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
+    args.iter()
+        .position(|arg| arg == flag)
+        .and_then(|index| args.get(index + 1))
+        .map(String::as_str)
+}
+
 fn main() {
+    let args = std::env::args().collect::<Vec<_>>();
+    let seed_count = option(&args, "--seeds")
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(10)
+        .clamp(1, 50);
+    let target_merit = option(&args, "--target")
+        .and_then(|value| value.parse::<f64>().ok())
+        .unwrap_or(30_000.0);
     let wavelengths: Vec<f64> = (400..=900).step_by(25).map(f64::from).collect();
     let library = vec![
         table("H", 2.30, &wavelengths),
@@ -162,7 +178,10 @@ fn main() {
         terminal_insertions: 20,
         ..ComparisonOptions::default()
     };
-    let seeds = [20261121_u64, 20261122, 20261123];
+    let seeds = (0..seed_count)
+        .map(|index| 20261121_u64 + index as u64)
+        .collect::<Vec<_>>();
+    println!("CAMPAIGN seeds={} target={target_merit:.1}", seeds.len());
     let campaign = run_comparison_campaign(
         &decoder,
         &template,
@@ -193,7 +212,7 @@ fn main() {
         );
     }
 
-    let ert = expected_running_time(&campaign, 30_000.0).unwrap();
+    let ert = expected_running_time(&campaign, target_merit).unwrap();
     for arm in &ert.arms {
         println!(
             "ERT target={} arm={} trials={} successes={} rate={:.3} ert={}",
