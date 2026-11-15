@@ -10,7 +10,7 @@ repository, and every limitation is listed rather than inferred away.
 - `navette` local `dev_ga` at `c9e964d` (A1/A3, A2 introspection, public
   joint scan, and the core `ndarray` 0.16 lift).
 - `navette-ga` single crate, LGPL-3.0-or-later.
-- `cargo test --all-features`: **71 passed**.
+- `cargo test --all-features`: **72 passed**.
 - `cargo clippy --all-targets --all-features -- -D warnings`: clean.
 - `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features`: clean.
 - `navette` with `ga-introspect`: **801 passed, 1 ignored**.
@@ -216,22 +216,28 @@ call, one per stack in `evaluate_batch`, and the LM solver's own `evals` from
 is the comparison-arm fork. `compare_h0_and_ga_at_budget` gives H0 and H1
 separate counters and stops each at the requested budget.
 
-C00-class run, same seed and 32-layer search space; H0 is random-start
-needle-plus-LM multi-start, H1 is the ordinary Recipe A GA:
+C00-class run, five seeds (`20261114..20261118`), same seed per pair, same
+32-layer search space; H0 is random-start needle-plus-LM multi-start, H1 is
+the ordinary Recipe A GA. The C00 example reproduces this with
+`--h0-budget 2000 --h0-repeats 5`.
 
-| budget | arm | merit | avg R | layers | actual evaluations |
+| budget | arm | median merit | median avg R | actual evaluations | wins |
 |---:|---|---:|---:|---:|---:|
-| 2,000 | H0 | 717509.744016 | 16.0800 % | 13 | 2,048 |
-| 2,000 | H1 | 24685.958395 | 3.3849 % | 7 | 2,049 |
-| 20,000 | H0 | 126253.031531 | 6.7780 % | 14 | 20,005 |
-| 20,000 | H1 | 24685.958395 | 3.3849 % | 7 | 20,033 |
+| 2,000 | H0 | 992891.305252 | 18.9000 % | 2,045–2,309 | 0/5 |
+| 2,000 | H1 | 24685.958395 | 3.3849 % | 2,049 | **5/5** |
+| 20,000 | H0 | 126253.031531 | 6.7780 % | 20,005–20,285 | 0/5 |
+| 20,000 | H1 | 24196.228802 | 3.3391 % | 20,033 | **5/5** |
 
 On this fixture the classical control loses at both budgets; the H0 arm
-improves with more LM work but does not catch the GA. This is one seed and one
-target, and H0's random 32-layer starts are a deliberately hard version of the
-control, so it is evidence against the strong "H0 wins at 5–10 layers" risk,
-not a universal claim. The H1 plateau also shows that more evaluations alone
-do not improve this fixed-width search after it converges.
+improves with more LM work but does not catch the GA. H0's random 32-layer
+starts are a deliberately hard version of the control, and all five H0 seeds
+converge to the same best local optimum at 20k, so this is evidence against
+the strong "H0 wins at 5–10 layers" risk, not a universal claim. The H1
+plateau also shows that more evaluations alone do not improve this fixed-width
+search after it converges.
+
+The repeat runner is fixed-seed only: no rank-sum test, multiplicity
+correction, or ERT reporting is claimed yet.
 
 ## Phase 2 — S4/F1 archive and S6 split
 

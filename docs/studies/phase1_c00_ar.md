@@ -101,10 +101,11 @@ schedule table and caveat.
 
 `cargo run --release --example phase1_c00_ar -- --h0-budget 2000` runs the
 classical random-start/LM control and H1 at the same solver-evaluation count.
-The recorded runs gave H0 `avg_R = 16.08 %` at 2,048 evaluations versus H1
-`3.3849 %` at 2,049; at 20,000 evaluations H0 improved to `6.7780 %` while H1
-stayed at `3.3849 %`. This is one seed and one target; see the Phase 2 ledger
-for the caveat.
+With `--h0-repeats 5` the five-seed medians were H0 `18.9000 %` versus H1
+`3.3849 %` at 2k evaluations, and H0 `6.7780 %` versus H1 `3.3391 %` at 20k.
+H1 won all five seeds at both budgets. This is one target and a fixed-seed
+sample; see the Phase 2 ledger for the caveat and the missing statistical
+test.
 
 ## Not covered
 

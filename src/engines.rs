@@ -538,6 +538,15 @@ pub struct BudgetComparison {
     pub ga: BudgetArm,
 }
 
+/// A fixed-seed repeat set for one equal-budget comparison.
+#[derive(Clone, Debug)]
+pub struct RepeatComparison {
+    pub budget: usize,
+    pub seeds: Vec<u64>,
+    pub h0: Vec<BudgetArm>,
+    pub ga: Vec<BudgetArm>,
+}
+
 /// Best design plus the policy bookkeeping from an island run.
 #[derive(Clone, Debug)]
 pub struct IslandRecipeResult {
@@ -1860,6 +1869,45 @@ pub fn compare_h0_and_ga_at_budget(
     })
 }
 
+/// Repeat the equal-budget H0/H1 comparison over fixed seeds.
+///
+/// This is the repeat-runner skeleton for the §2.7 protocol: every seed gets
+/// the same budget and the same decoder/template, and the per-run stacks stay
+/// available for distributional reporting. It does not add a statistical test
+/// or multiplicity correction; callers must report the actual evaluation
+/// counts and must not treat the sample as a finished campaign.
+pub fn compare_h0_and_ga_repeats(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    h0_cfg: &H0Config,
+    ga_cfg: &RecipeAConfig,
+    seeds: &[u64],
+    budget: usize,
+) -> Result<RepeatComparison, String> {
+    if seeds.is_empty() {
+        return Err("repeat comparison needs at least one seed".into());
+    }
+    let mut h0 = Vec::with_capacity(seeds.len());
+    let mut ga = Vec::with_capacity(seeds.len());
+    for &seed in seeds {
+        let mut h0_cfg = *h0_cfg;
+        h0_cfg.seed = Some(seed);
+        let mut ga_cfg = ga_cfg.clone();
+        ga_cfg.seed = Some(seed);
+        let comparison =
+            compare_h0_and_ga_at_budget(decoder, template, evaluator, &h0_cfg, &ga_cfg, budget)?;
+        h0.push(comparison.h0);
+        ga.push(comparison.ga);
+    }
+    Ok(RepeatComparison {
+        budget,
+        seeds: seeds.to_vec(),
+        h0,
+        ga,
+    })
+}
+
 /// Run the I1 cross-island multi-parent experiment.
 ///
 /// This is the same ring and the same per-generation advance as
@@ -2576,6 +2624,58 @@ mod tests {
         assert!(comparison.h0.result.merit.is_finite());
         assert!(comparison.ga.result.merit.is_finite());
         assert!(comparison.ga.result.generations >= 1);
+    }
+
+    #[test]
+    fn repeat_runner_keeps_one_arm_per_seed() {
+        let pool = MaterialPool::new(vec![
+            Material::new("H", 20.0, 200.0).unwrap(),
+            Material::new("L", 10.0, 150.0).unwrap(),
+        ])
+        .unwrap();
+        let decoder = Decoder::without_constraints(pool).unwrap();
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0),
+            constant("substrate", 1.52, 0.0),
+            vec![constant("H", 2.2, 0.0), constant("L", 1.46, 0.0)],
+        )
+        .unwrap();
+        let evaluator = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            zero_spec(),
+            EvaluatorOptions {
+                clamp_min_nm: 20.0,
+                clamp_max_nm: 150.0,
+                ..EvaluatorOptions::default()
+            },
+        )
+        .unwrap();
+        let h0 = H0Config {
+            starts: 1,
+            max_layers: 3,
+            mutation_sigma: 0.2,
+            needle_steps: 0,
+            seed: Some(31),
+        };
+        let ga = RecipeAConfig {
+            population_size: 8,
+            generations: 1,
+            max_layers: 3,
+            mutation_sigma: 0.2,
+            seed: Some(31),
+        };
+        let repeats =
+            compare_h0_and_ga_repeats(&decoder, &template, &evaluator, &h0, &ga, &[31, 32], 100)
+                .unwrap();
+        assert_eq!(repeats.seeds, vec![31, 32]);
+        assert_eq!(repeats.h0.len(), 2);
+        assert_eq!(repeats.ga.len(), 2);
+        assert!(repeats
+            .h0
+            .iter()
+            .chain(&repeats.ga)
+            .all(|arm| arm.result.merit.is_finite() && arm.evaluations >= repeats.budget));
     }
 
     #[test]

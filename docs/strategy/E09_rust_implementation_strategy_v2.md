@@ -27,7 +27,7 @@ amendments are implemented by the owner, never requested.*
   `cycle::joint_needle_scan` and the A2 merit gradient (`d9faa79`); `c9e964d` lifts the core to `ndarray` 0.16 so navette, `moors`, and `navette-ga` share one array major.
 - **`navette-ga`:** G2 decoder, G1 bridge, A1 memetic operator, fixed and
   variable-length Recipe A, the Phase 2 ring, and the new Phase 2/3 modules
-  (`moors_split`, `qd`, `study`, `bench`). Full suite: **71 tests**.
+  (`moors_split`, `qd`, `study`, `bench`). Full suite: **72 tests**.
 - **Phase 1 exit artifact:** G3 rung-2 material loader; terminal LM + needle
   finish with Lamarckian write-back and actual-trial scan certificate;
   C00-class ledger at `docs/studies/phase1_c00_ar.md` (8 layers, avg
@@ -48,9 +48,10 @@ amendments are implemented by the owner, never requested.*
   GA's default zero fitness. The first depth bake on the C00 AR fixture
   screened every result and found the fixed-width H1 path plateaus at 16
   decoded layers even with a 40-layer cap, so the 40-layer steep-edge
-  Recipe B filter remains open. The first equal-solver-budget H0/H1 run
-  (2k and 20k evaluations) has H1 ahead at both budgets on this fixture; this
-  is one seed, not the final campaign. Details and limits:
+  Recipe B filter remains open. The first five-seed equal-solver-budget
+  H0/H1 run (2k and 20k evaluations) has H1 ahead at both budgets on this
+  fixture; it is fixed-seed evidence, not the final statistical campaign.
+  Details and limits:
   `docs/studies/phase2_phase3_ledger.md`.
 - **Phase 3 evidence:** I1 cross-island multi-parent crossover with
   homogenisation readout; G7 campaign queue/pins/pruner/importance; G8

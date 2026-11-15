@@ -21,7 +21,7 @@ use navette::smatrix::synthesis::structure::LayerSpec;
 use navette_ga::bridge::{EvaluatorOptions, FitnessEvaluator, MemeticOperator, StackTemplate};
 use navette_ga::decoder::Decoder;
 use navette_ga::engines::{
-    compare_h0_and_ga_at_budget, finish_recipe_a, run_recipe_a, run_recipe_a_memetic, H0Config,
+    compare_h0_and_ga_repeats, finish_recipe_a, run_recipe_a, run_recipe_a_memetic, H0Config,
     MemeticSchedule, RecipeAConfig, TerminalReport,
 };
 use navette_ga::materials::{decoder_pool, load_library, stack_template, ThicknessBounds};
@@ -147,22 +147,62 @@ fn main() {
             needle_steps: 0,
             seed: cfg.seed,
         };
-        let comparison =
-            compare_h0_and_ga_at_budget(&decoder, &template, &evaluator, &h0_cfg, &cfg, budget)
-                .unwrap();
+        let repeats = number("--h0-repeats", 1);
+        let base_seed = cfg.seed.unwrap_or(20261114);
+        let seeds: Vec<u64> = (0..repeats)
+            .map(|index| base_seed.wrapping_add(index as u64))
+            .collect();
+        let comparison = compare_h0_and_ga_repeats(
+            &decoder, &template, &evaluator, &h0_cfg, &cfg, &seeds, budget,
+        )
+        .unwrap();
         println!("PHASE2_H0_BUDGET");
-        for (name, arm) in [("h0", &comparison.h0), ("ga", &comparison.ga)] {
-            let sim = evaluator.simulate(&arm.result.stack).unwrap();
-            let reflectance = sim.curve(CurveId::Rs).unwrap();
-            let avg_r = reflectance.iter().sum::<f64>() / reflectance.len() as f64;
+        let mut h0_r: Vec<f64> = Vec::with_capacity(seeds.len());
+        let mut ga_r: Vec<f64> = Vec::with_capacity(seeds.len());
+        let mut h0_merit = Vec::with_capacity(seeds.len());
+        let mut ga_merit = Vec::with_capacity(seeds.len());
+        for (index, seed) in seeds.iter().enumerate() {
+            let h0 = &comparison.h0[index];
+            let ga = &comparison.ga[index];
+            let h0_avg = {
+                let sim = evaluator.simulate(&h0.result.stack).unwrap();
+                let reflectance = sim.curve(CurveId::Rs).unwrap();
+                reflectance.iter().sum::<f64>() / reflectance.len() as f64
+            };
+            let ga_avg = {
+                let sim = evaluator.simulate(&ga.result.stack).unwrap();
+                let reflectance = sim.curve(CurveId::Rs).unwrap();
+                reflectance.iter().sum::<f64>() / reflectance.len() as f64
+            };
+            h0_r.push(h0_avg);
+            ga_r.push(ga_avg);
+            h0_merit.push(h0.result.merit);
+            ga_merit.push(ga.result.merit);
             println!(
-                "{name}_merit={:.9} {name}_avg_R={avg_r:.9} {name}_layers={} {name}_evaluations={}",
-                arm.result.merit,
-                arm.result.decoded.len(),
-                arm.evaluations
+                "seed={seed} h0_merit={:.9} h0_avg_R={h0_avg:.9} h0_evaluations={} ga_merit={:.9} ga_avg_R={ga_avg:.9} ga_evaluations={}",
+                h0.result.merit, h0.evaluations, ga.result.merit, ga.evaluations
             );
         }
-        println!("budget={}", comparison.budget);
+        let median = |values: &mut [f64]| -> f64 {
+            values.sort_by(f64::total_cmp);
+            let mid = values.len() / 2;
+            if values.len().is_multiple_of(2) {
+                0.5 * (values[mid - 1] + values[mid])
+            } else {
+                values[mid]
+            }
+        };
+        println!("budget={budget} repeats={}", seeds.len());
+        println!(
+            "h0_median_merit={:.9} h0_median_avg_R={:.9}",
+            median(&mut h0_merit),
+            median(&mut h0_r)
+        );
+        println!(
+            "ga_median_merit={:.9} ga_median_avg_R={:.9}",
+            median(&mut ga_merit),
+            median(&mut ga_r)
+        );
         return;
     }
 
