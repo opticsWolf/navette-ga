@@ -10,7 +10,7 @@ repository, and every limitation is listed rather than inferred away.
 - `navette` local `dev_ga` at `c9e964d` (A1/A3, A2 introspection, public
   joint scan, and the core `ndarray` 0.16 lift).
 - `navette-ga` single crate, LGPL-3.0-or-later.
-- `cargo test --all-features`: **76 passed**.
+- `cargo test --all-features`: **79 passed**.
 - `cargo clippy --all-targets --all-features -- -D warnings`: clean.
 - `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features`: clean.
 - `navette` with `ga-introspect`: **801 passed, 1 ignored**.
@@ -231,6 +231,60 @@ thickness refinement, **not** a GA discovery of a 40-layer design. The next
 Recipe B step is to run insertion-heavy H7/H3 from a seed bank and compare the
 discovered filter against this artifact under the same production screen.
 
+## Phase 2 — filter merit-versus-depth bake
+
+`examples/phase2_filter_depth.rs` runs the same edge target at depths
+10, 20, 30, 40, and 50 with the same chirped H/L construction,
+`ClampUpAlways`, and a 5,000-iteration LM cap. The seed is reflective
+everywhere (merit in the millions); only the layer count changes.
+
+```text
+depth  finish merit    passband avg R   stopband avg R   min nm
+10     4,413,530.93    4.5534 %         75.4175 %        25.227
+20       179,951.70    2.2608 %         95.1641 %        10.000
+30         2,879.44    0.6750 %         99.5302 %        10.000
+40         5,270.69    0.9470 %         99.5898 %        10.000
+50           474.53    0.4456 %         99.9525 %        46.058
+```
+
+This is the positive scale signal the C00 antireflection bake could not
+produce: depth buys stopband rejection on a target that actually needs it.
+It is not monotonic at 40 layers (30 was better at the same 5k LM cap), and
+the 50-layer point is best in this table. The 40-layer artifact in the
+previous section uses a different chirp and a 10k cap, so the two 40-layer
+numbers are not directly comparable. All five stacks pass the decoder's A4
+check; none is a GA-discovered architecture.
+
+## Phase 3 — H0–H7 dispatch and campaign loop
+
+`bench::run_comparison_arm` now dispatches the registry to the engine that
+implements each arm:
+
+| arm | driver |
+|---|---|
+| H0 | `run_h0_control` |
+| H1 | `run_recipe_a` |
+| H2 | `run_recipe_a` + terminal `finish_recipe_a` |
+| H3 | `run_recipe_a_memetic` |
+| H4 | `run_recipe_a_tribes` with alternating island mutation regimes |
+| H5 | `run_recipe_a_illuminated` |
+| H6 | `run_recipe_a_surrogate` |
+| H7 | `run_recipe_a_vl_seeded` |
+
+`ComparisonOptions` carries the shared configs, the operator, the mined seed
+bank, and the terminal insertion cap. H2/H3 return an explicit error when no
+operator is supplied; H7 returns an explicit error when the seed bank is
+empty. The dispatcher resets the shared solver counter before each arm and
+returns the counter with the result.
+
+`bench::run_comparison_campaign` applies a fixed seed list to every arm
+(`recipe`, `h0`, and `vl` seed fields) and returns `CampaignArm` records with
+best/median merit and median evaluations. This is the multi-seed campaign
+loop, not an ERT report: a target merit and success rule are still needed for
+expected running time, and the family-level multiplicity correction is not
+applied here. The dispatch test runs all eight arms on the small fixture; the
+campaign test runs H0/H1/H6 over two seeds.
+
 ## Phase 2 — H0 control
 
 `engines::run_h0_control` runs independent random starts, a bounded LM
@@ -367,12 +421,14 @@ kurobako `Problem` over a fixed Recipe A space: two parameters per layer
 problem uses the same decoder/template/evaluator as the GA, so a solver is
 measured on the same physics.
 
-Limitations: the kurobako registration is a problem definition, not a full
-H0–H7 dispatch (H6 screening and the H7 seeded proposal arm are not wired);
-the archive illumination is not selection; the C00 depth bake is a negative
-scale signal; the 40-layer filter is a seeded stack plus LM, not a GA
-discovery; the equal-budget H0/H1 result is five seeds on one target; the H7
-arm is a mined-seed fallback, not a diffusion implementation; H6 is a linear
-screen, not a GP; navette-native A4 and the released-navette gate remain open. The core `ndarray` lift (`c9e964d`) resolves the earlier
+Limitations: the kurobako registration is a problem definition, and the
+dispatcher/campaign loop is not yet an ERT report (no target success rule or
+family multiplicity correction); the archive illumination is not selection;
+the C00 depth bake is a negative scale signal; the filter depth bake is one
+target and a 5k LM cap; the 40-layer filter is a seeded stack plus LM, not a
+GA discovery; the equal-budget H0/H1 result is five seeds on one target; the
+H7 arm is a mined-seed fallback, not a diffusion implementation; H6 is a
+linear screen, not a GP; navette-native A4 and the released-navette gate
+remain open. The core `ndarray` lift (`c9e964d`) resolves the earlier
 navette/moors array-major split; it is a dependency-major change for the next
 navette release.

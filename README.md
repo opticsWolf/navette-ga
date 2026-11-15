@@ -22,7 +22,8 @@ screen (`--surrogate`), or the H7 mined-seed fallback (`--seeded`); the first
 C00 comparison puts H1 ahead on all five seeds at 2k and 20k evaluations, and
 the H6 screen is cheaper but not better at equal true budget on this cheap-TMM
 fixture. The forty-layer seeded filter artifact is
-`examples/phase2_filter_40.rs`.
+`examples/phase2_filter_40.rs`; `examples/phase2_filter_depth.rs` is the
+merit-versus-depth bake.
 
 The boundary path now covers read-only joint gap acceptance, structural
 candidate enumeration, transactional chosen-locus insertion, the spectral
@@ -33,15 +34,15 @@ and the thickness residual Jacobian) and consumer-side A4 stack validation are
 exposed through the bridge/decoder. Phase 2/3 modules add the S4/F1 MOME
 archive and illuminated Recipe A run, the S6 `moors` split, the H0 control,
 I1 cross-island multi-parent crossover, the G7 campaign queue/pins/pruner,
-the G8 kurobako problem/H0–H7 registry, the G4/S2 mid-loop needle schedule
-for single-island and ring runs, the H6 linear surrogate, and the H7
-mined-seed fallback. Full suite: **76 tests**;
+the G8 kurobako problem/H0–H7 registry and dispatcher, the G4/S2 mid-loop
+needle schedule for single-island and ring runs, the H6 linear surrogate, and
+the H7 mined-seed fallback. Full suite: **79 tests**;
 `--all-features` includes the kurobako proof module.
 
 Limits are explicit: navette-native A4 (per-material bounds and the
-insert/migrate grammar hook), the H7 diffusion proposal and H0-H7 dispatch,
-a GA-discovered Recipe B filter (the seeded 40-layer artifact exists), and
-the multi-seed H0/H1/H3 campaign remain.
+insert/migrate grammar hook), the H7 diffusion proposal, a GA-discovered
+Recipe B filter (the seeded 40-layer artifact and depth bake exist), and the
+multi-seed H0/H1/H3 campaign with ERT remain.
 The mid-loop schedule has one C00 overhead measurement, not a controlled arm
 result. Consumer-side A4 is now
 enforced on every GA/terminal/joint path; the earlier C00 ledger was
@@ -77,6 +78,7 @@ examples/
   phase0_bench.rs          # G9: 61-wavelength evaluate/LM timing harness
   phase2_depth_bake.rs     # C00 depth/MOME bake with production screen
   phase2_filter_40.rs      # forty-layer seeded H/L edge-filter artifact
+  phase2_filter_depth.rs   # 10/20/30/40/50-layer filter depth bake
 docs/
   studies/                 # Phase 1 C00-class AR ledger and run artifacts
   README.md                # research/paper index

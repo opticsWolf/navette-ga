@@ -16,8 +16,15 @@ use kurobako_core::trial::{Params, Values};
 use kurobako_core::{Error, ErrorKind, Result};
 use trackable::error::ErrorKindExt;
 
-use crate::bridge::{FitnessEvaluator, StackTemplate};
+use crate::bridge::{FitnessEvaluator, MemeticOperator, StackTemplate};
 use crate::decoder::{Decoder, Genome, LayerGene};
+use crate::engines::{
+    finish_recipe_a, run_h0_control, run_recipe_a, run_recipe_a_illuminated, run_recipe_a_memetic,
+    run_recipe_a_surrogate, run_recipe_a_tribes, run_recipe_a_vl_seeded, H0Config,
+    HeterogeneousTribeConfig, IslandRecipeConfig, IslandStrategy, MemeticSchedule, RecipeAConfig,
+    RecipeAResult, SurrogateConfig, TribeConstraint, VlRecipeAConfig,
+};
+use crate::qd::ArchiveConfig;
 
 /// The eight comparison arms from E09 v2 §2.7 / §5.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -241,6 +248,247 @@ pub fn material_domain(pool_len: usize) -> Result<VariableBuilder> {
     Ok(var("material").discrete(0, pool_len as i64 - 1))
 }
 
+/// Configuration for one H0–H7 comparison-arm dispatch.
+///
+/// The arm owns the driver choice; this object supplies the shared problem
+/// inputs and the arm-specific policy. H2/H3 require an operator, H7 requires
+/// a non-empty seed bank, and every other arm is runnable with the defaults.
+#[derive(Clone, Debug)]
+pub struct ComparisonOptions {
+    pub recipe: RecipeAConfig,
+    pub h0: H0Config,
+    pub islands: IslandRecipeConfig,
+    pub vl: VlRecipeAConfig,
+    pub memetic: MemeticSchedule,
+    pub surrogate: SurrogateConfig,
+    pub archive: ArchiveConfig,
+    pub operator: Option<MemeticOperator>,
+    pub seeds: Vec<Genome>,
+    pub seed_fraction: f64,
+    /// Insertion cap passed to the H2 terminal finish.
+    pub terminal_insertions: usize,
+}
+
+impl Default for ComparisonOptions {
+    fn default() -> Self {
+        Self {
+            recipe: RecipeAConfig::default(),
+            h0: H0Config::default(),
+            islands: IslandRecipeConfig::default(),
+            vl: VlRecipeAConfig::default(),
+            memetic: MemeticSchedule::default(),
+            surrogate: SurrogateConfig::default(),
+            archive: ArchiveConfig::default(),
+            operator: None,
+            seeds: Vec::new(),
+            seed_fraction: 1.0,
+            terminal_insertions: 20,
+        }
+    }
+}
+
+/// One completed comparison arm.
+#[derive(Clone, Debug)]
+pub struct ComparisonRun {
+    pub arm: ComparisonArm,
+    pub result: RecipeAResult,
+    /// Solver-evaluation counter after the arm, including LM evals.
+    pub evaluations: usize,
+}
+
+/// Dispatch one E09 H0–H7 arm through the engine that implements it.
+///
+/// H2 is the phased GA -> needle -> LM finish; H3 is the mid-loop memetic
+/// schedule; H4 is the ring with alternating island mutation regimes; H5 is
+/// the illuminated MOME run; H6 is the linear surrogate screen; H7 is the
+/// variable-length seeded proposal arm. Arm-specific missing inputs are
+/// reported as errors instead of being silently replaced by another arm.
+pub fn run_comparison_arm(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &mut FitnessEvaluator,
+    arm: ComparisonArm,
+    options: &ComparisonOptions,
+) -> Result<ComparisonRun, String> {
+    evaluator.reset_evaluations();
+    let result = match arm {
+        ComparisonArm::H0 => run_h0_control(
+            decoder,
+            template,
+            evaluator,
+            &options.h0,
+            options.operator.as_ref(),
+        )?,
+        ComparisonArm::H1 => run_recipe_a(decoder, template, evaluator, &options.recipe)?,
+        ComparisonArm::H2 => {
+            let operator = options
+                .operator
+                .as_ref()
+                .ok_or_else(|| "H2 needs a memetic operator for the terminal finish".to_string())?;
+            let result = run_recipe_a(decoder, template, evaluator, &options.recipe)?;
+            let (finished, _) = finish_recipe_a(
+                decoder,
+                template,
+                evaluator,
+                result,
+                operator,
+                options.terminal_insertions,
+            )?;
+            finished
+        }
+        ComparisonArm::H3 => {
+            let operator = options
+                .operator
+                .as_ref()
+                .ok_or_else(|| "H3 needs a memetic operator".to_string())?;
+            run_recipe_a_memetic(
+                decoder,
+                template,
+                evaluator,
+                &options.recipe,
+                operator,
+                &options.memetic,
+            )?
+            .best
+        }
+        ComparisonArm::H4 => {
+            let count = options.islands.islands;
+            let strategies = (0..count)
+                .map(|index| IslandStrategy {
+                    mutation_sigma: if index.is_multiple_of(2) { 0.10 } else { 0.20 },
+                    ..IslandStrategy::default()
+                })
+                .collect::<Vec<_>>();
+            let constraints = vec![TribeConstraint::default(); count];
+            run_recipe_a_tribes(
+                decoder,
+                template,
+                evaluator,
+                &options.recipe,
+                &HeterogeneousTribeConfig {
+                    islands: options.islands.clone(),
+                    strategies,
+                    constraints,
+                },
+            )?
+            .best
+        }
+        ComparisonArm::H5 => {
+            run_recipe_a_illuminated(
+                decoder,
+                template,
+                evaluator,
+                &options.recipe,
+                options.archive,
+            )?
+            .best
+        }
+        ComparisonArm::H6 => {
+            run_recipe_a_surrogate(
+                decoder,
+                template,
+                evaluator,
+                &options.recipe,
+                options.surrogate,
+            )?
+            .best
+        }
+        ComparisonArm::H7 => {
+            if options.seeds.is_empty() {
+                return Err("H7 needs a non-empty mined-seed bank".into());
+            }
+            run_recipe_a_vl_seeded(
+                decoder,
+                template,
+                evaluator,
+                &options.vl,
+                &options.seeds,
+                options.seed_fraction,
+            )?
+        }
+    };
+    let evaluations = evaluator.evaluations();
+    Ok(ComparisonRun {
+        arm,
+        result,
+        evaluations,
+    })
+}
+
+/// All fixed-seed runs for one comparison arm.
+#[derive(Clone, Debug)]
+pub struct CampaignArm {
+    pub arm: ComparisonArm,
+    pub runs: Vec<ComparisonRun>,
+}
+
+impl CampaignArm {
+    pub fn best_merit(&self) -> Option<f64> {
+        self.runs
+            .iter()
+            .map(|run| run.result.merit)
+            .min_by(f64::total_cmp)
+    }
+
+    pub fn median_merit(&self) -> Option<f64> {
+        let mut values = self
+            .runs
+            .iter()
+            .map(|run| run.result.merit)
+            .collect::<Vec<_>>();
+        values.sort_by(f64::total_cmp);
+        values.get(values.len() / 2).copied()
+    }
+
+    pub fn median_evaluations(&self) -> Option<f64> {
+        let mut values = self
+            .runs
+            .iter()
+            .map(|run| run.evaluations as f64)
+            .collect::<Vec<_>>();
+        values.sort_by(f64::total_cmp);
+        values.get(values.len() / 2).copied()
+    }
+}
+
+/// Run a fixed set of arms over a fixed set of seeds.
+///
+/// The seed is written into every arm configuration that has a seed field
+/// (`recipe`, `h0`, and `vl`); H6 and H7 therefore inherit a reproducible
+/// initializer from the same seed. This is the campaign loop, not an ERT
+/// report: a caller still needs a target merit and a success rule to compute
+/// expected running time.
+pub fn run_comparison_campaign(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &mut FitnessEvaluator,
+    arms: &[ComparisonArm],
+    seeds: &[u64],
+    options: &ComparisonOptions,
+) -> Result<Vec<CampaignArm>, String> {
+    if arms.is_empty() {
+        return Err("comparison campaign needs at least one arm".into());
+    }
+    if seeds.is_empty() {
+        return Err("comparison campaign needs at least one seed".into());
+    }
+    let mut results = Vec::with_capacity(arms.len());
+    for &arm in arms {
+        let mut runs = Vec::with_capacity(seeds.len());
+        for &seed in seeds {
+            let mut seeded = options.clone();
+            seeded.recipe.seed = Some(seed);
+            seeded.h0.seed = Some(seed);
+            seeded.vl.seed = Some(seed);
+            runs.push(run_comparison_arm(
+                decoder, template, evaluator, arm, &seeded,
+            )?);
+        }
+        results.push(CampaignArm { arm, runs });
+    }
+    Ok(results)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -356,5 +604,157 @@ mod tests {
         let values = values.into_vec();
         assert_eq!(values.len(), 1);
         assert!(values[0].is_finite());
+    }
+
+    fn comparison_options(problem: &ReflectanceProblem) -> ComparisonOptions {
+        let wavelengths = vec![550.0];
+        let spectral = navette::smatrix::synthesis::pipeline::SpectralInputs::from_spec(
+            &spec(),
+            &[Radians::ZERO],
+            &wavelengths,
+        )
+        .unwrap();
+        let operator = MemeticOperator::new(
+            spectral,
+            problem.template.needle_pool().unwrap(),
+            navette::smatrix::synthesis::cycle::NeedleCycleConfig {
+                max_needles: 2,
+                scan_step_nm: 10.0,
+                boundary_needles: false,
+                ..Default::default()
+            },
+        );
+        ComparisonOptions {
+            recipe: RecipeAConfig {
+                population_size: 4,
+                generations: 2,
+                max_layers: 2,
+                mutation_sigma: 0.2,
+                seed: Some(7),
+            },
+            h0: H0Config {
+                starts: 2,
+                max_layers: 2,
+                mutation_sigma: 0.2,
+                needle_steps: 1,
+                seed: Some(11),
+            },
+            islands: IslandRecipeConfig {
+                islands: 2,
+                migration_interval: 1,
+                migration_count: 1,
+            },
+            vl: VlRecipeAConfig {
+                population_size: 4,
+                generations: 2,
+                min_layers: 1,
+                max_layers: 2,
+                mutation_sigma: 0.2,
+                length_penalty: None,
+                seed: Some(13),
+            },
+            memetic: MemeticSchedule {
+                interval: 1,
+                top: 1,
+                max_insertions: 1,
+            },
+            surrogate: SurrogateConfig {
+                warmup: 2,
+                sample_every: 2,
+                refit_every: 2,
+            },
+            archive: crate::qd::ArchiveConfig {
+                depth_bins: 2,
+                thickness_bins: 2,
+                max_layers: 2.0,
+                max_thickness_nm: 1_000.0,
+                max_front: 2,
+            },
+            operator: Some(operator),
+            seeds: vec![Genome::from(vec![LayerGene::new(0.25, 0.5, 1.0)])],
+            seed_fraction: 0.5,
+            terminal_insertions: 4,
+        }
+    }
+
+    #[test]
+    fn every_comparison_arm_dispatches_to_its_engine() {
+        for arm in ComparisonArm::ALL {
+            let problem = problem();
+            let mut evaluator = problem.evaluator.clone();
+            let options = comparison_options(&problem);
+            let run = run_comparison_arm(
+                &problem.decoder,
+                &problem.template,
+                &mut evaluator,
+                arm,
+                &options,
+            )
+            .unwrap_or_else(|error| panic!("{} dispatch failed: {error}", arm.label()));
+            assert_eq!(run.arm, arm);
+            assert!(run.result.merit.is_finite(), "{} merit", arm.label());
+            assert!(run.evaluations > 0, "{} evaluations", arm.label());
+        }
+    }
+
+    #[test]
+    fn comparison_dispatch_reports_missing_arm_inputs() {
+        let problem = problem();
+        let mut evaluator = problem.evaluator.clone();
+        let mut options = comparison_options(&problem);
+        options.seeds.clear();
+        let error = run_comparison_arm(
+            &problem.decoder,
+            &problem.template,
+            &mut evaluator,
+            ComparisonArm::H7,
+            &options,
+        )
+        .unwrap_err();
+        assert!(error.contains("H7"));
+
+        options.operator = None;
+        let error = run_comparison_arm(
+            &problem.decoder,
+            &problem.template,
+            &mut evaluator,
+            ComparisonArm::H2,
+            &options,
+        )
+        .unwrap_err();
+        assert!(error.contains("H2"));
+    }
+
+    #[test]
+    fn comparison_campaign_runs_each_seed_for_each_arm() {
+        let problem = problem();
+        let mut evaluator = problem.evaluator.clone();
+        let options = comparison_options(&problem);
+        let arms = [ComparisonArm::H0, ComparisonArm::H1, ComparisonArm::H6];
+        let campaign = run_comparison_campaign(
+            &problem.decoder,
+            &problem.template,
+            &mut evaluator,
+            &arms,
+            &[101, 202],
+            &options,
+        )
+        .unwrap();
+        assert_eq!(campaign.len(), arms.len());
+        for entry in &campaign {
+            assert_eq!(entry.runs.len(), 2);
+            assert!(entry.best_merit().unwrap().is_finite());
+            assert!(entry.median_merit().unwrap().is_finite());
+            assert!(entry.median_evaluations().unwrap() > 0.0);
+        }
+        assert!(run_comparison_campaign(
+            &problem.decoder,
+            &problem.template,
+            &mut evaluator,
+            &arms,
+            &[],
+            &options,
+        )
+        .is_err());
     }
 }
