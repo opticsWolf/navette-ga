@@ -168,6 +168,37 @@ terminal scan certificate remains zero actual improvements in every row. The
 budget conclusion is therefore a tuning result for this fixture, not a general
 Phase 2 claim.
 
+## Phase 2 — depth bake on the C00 AR fixture
+
+`examples/phase2_depth_bake.rs` runs the same H/L, 400–900 nm antireflection
+target at fixed width caps 4, 8, 12, 16, 24, 32, and 40 (seed
+`20261116 + depth`, population 32, 40 generations). Every returned stack is
+screened by `Decoder::validate_stack`, a 10 nm thickness floor, and the
+declared layer cap; the best points are inserted into `MomeArchive`.
+
+```text
+depth   merit          avg R      decoded layers   d_min nm   screen
+4       16669.237404   2.8109 %   1                99.904     pass
+8       16690.799543   2.8117 %   3                19.565     pass
+12      17201.764607   2.8455 %   1                111.976    pass
+16      24272.193840   3.3497 %   3                131.052    pass
+24      23577.381474   3.3052 %   5                26.160     pass
+32      249481.228730  8.3255 %   7                22.881     pass
+40      140932.513746  7.0548 %   16               48.940     pass
+```
+
+The result is deliberately reported as a **negative scale signal**, not a
+40-layer success: the fixed-width/presence-coded H1 path does not grow a
+40-layer design on this target, and the higher caps do not improve the merit.
+That is expected for a five-to-ten-layer antireflection problem, where extra
+layers are not useful, but it means this bake cannot stand in for Recipe B's
+steep-edge filter. All screens pass because the designs that survive are small;
+it does not prove a 40-layer manufacturable filter.
+
+The archive contains six occupied cells and the depth/thickness front is
+printed by the example. The next filter step needs a target that rewards depth
+and the insertion-heavy Recipe B path, not a larger cap on the AR fixture.
+
 ## Phase 2 — H0 control
 
 `engines::run_h0_control` runs independent random starts, a bounded LM
@@ -218,9 +249,8 @@ measured on the same physics.
 
 Limitations: the kurobako registration is a problem definition, not a full
 H0–H7 dispatch (H6 screening and the H7 seeded proposal arm are not wired);
-the archive illumination is not selection; no 40-layer production filter or
-merit-vs-depth bake is claimed; the mid-loop memetic evidence is one C00
-overhead run, not an equal-compute H0/H1/H3 campaign; navette-native A4 and
-the released-navette gate remain open. The core `ndarray` lift (`c9e964d`) resolves the earlier
+the archive illumination is not selection; the C00 depth bake is a negative
+scale signal, not a 40-layer steep-edge filter; navette-native A4 and the
+released-navette gate remain open. The core `ndarray` lift (`c9e964d`) resolves the earlier
 navette/moors array-major split; it is a dependency-major change for the next
 navette release.

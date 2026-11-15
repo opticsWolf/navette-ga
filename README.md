@@ -67,6 +67,7 @@ src/
   main.rs                  # Recipe A/B binary scaffold
 examples/
   phase0_bench.rs          # G9: 61-wavelength evaluate/LM timing harness
+  phase2_depth_bake.rs     # C00 depth/MOME bake with production screen
 docs/
   studies/                 # Phase 1 C00-class AR ledger and run artifacts
   README.md                # research/paper index

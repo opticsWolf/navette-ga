@@ -45,7 +45,10 @@ amendments are implemented by the owner, never requested.*
   6 % wall time and moves avg R from 3.36 % to 1.17 %; the earlier 10/8/2
   setting cost 63 %. Supplied populations now rebind the real fitness
   function; without that, island/illuminated generations silently kept the
-  GA's default zero fitness. Details and limits:
+  GA's default zero fitness. The first depth bake on the C00 AR fixture
+  screened every result and found the fixed-width H1 path plateaus at 16
+  decoded layers even with a 40-layer cap, so the 40-layer steep-edge
+  Recipe B filter remains open. Details and limits:
   `docs/studies/phase2_phase3_ledger.md`.
 - **Phase 3 evidence:** I1 cross-island multi-parent crossover with
   homogenisation readout; G7 campaign queue/pins/pruner/importance; G8
