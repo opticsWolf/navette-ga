@@ -83,6 +83,14 @@ use navette_ga::engines::{
     H0Config, IslandRecipeConfig, MemeticSchedule, ProposalConfig, RecipeAConfig, VlRecipeAConfig,
 };
 
+fn number(args: &[String], flag: &str, default: usize) -> usize {
+    args.iter()
+        .position(|arg| arg == flag)
+        .and_then(|index| args.get(index + 1))
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(default)
+}
+
 fn genome_from_stack(decoder: &Decoder, stack: &DesignStack) -> Genome {
     let materials = decoder.pool().materials();
     Genome::from(
@@ -105,6 +113,8 @@ fn genome_from_stack(decoder: &Decoder, stack: &DesignStack) -> Genome {
 }
 
 fn main() {
+    let args = std::env::args().collect::<Vec<_>>();
+    let seed_count = number(&args, "--seeds", 5).clamp(1, 20);
     let wavelengths: Vec<f64> = (400..=900).step_by(5).map(f64::from).collect();
     let library = vec![
         table("H", 2.30, &wavelengths),
@@ -211,7 +221,9 @@ fn main() {
         terminal_insertions: 10,
         ..ComparisonOptions::default()
     };
-    let seeds = [20261121_u64, 20261122];
+    let seeds = (0..seed_count)
+        .map(|offset| 20261121 + offset as u64)
+        .collect::<Vec<_>>();
     let campaign = run_comparison_campaign(
         &decoder,
         &template,

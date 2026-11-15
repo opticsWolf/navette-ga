@@ -44,10 +44,10 @@ the H7 mined-seed fallback and optional proposal expansion. Full suite:
 `--all-features` includes the kurobako proof module.
 
 Limits are explicit: navette-native A4 (per-material bounds and the
-insert/migrate grammar hook), the H7 diffusion proposal, a GA-discovered
-Recipe B filter (a needle-grown 40-layer filter, the seeded 40-layer artifact,
-and the depth bake exist), and the larger multi-fixture H0–H7 campaign remain;
-a ten-seed C00 campaign is recorded in the ledger.
+insert/migrate grammar hook), a true learned H7 diffusion proposal, and the
+larger multi-fixture H0–H7 campaign remain. A needle-grown 40-layer filter, a
+GA-initialized 43-layer H2 deep filter, the seeded 40-layer artifact, the
+depth bake, and a ten-seed C00 campaign are recorded in the ledger.
 The mid-loop schedule has one C00 overhead measurement, not a controlled arm
 result. Consumer-side A4 is now
 enforced on every GA/terminal/joint path; the earlier C00 ledger was
@@ -86,7 +86,7 @@ examples/
   phase2_filter_depth.rs   # 10/20/30/40/50-layer filter depth bake
   phase2_filter_growth.rs  # needle-grown filter probe (default 40-layer run; --pairs sweep)
   phase2_campaign.rs       # H0-H7 campaign + ERT + Holm (bench feature)
-  phase2_filter_campaign.rs # filter-fixture H0-H7 check (bench feature)
+  phase2_filter_campaign.rs # five-seed filter H0-H7 check (bench feature)
 docs/
   studies/                 # Phase 1 C00-class AR ledger and run artifacts
   README.md                # research/paper index

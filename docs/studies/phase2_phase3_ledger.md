@@ -327,37 +327,43 @@ first iteration. Navette `dev_ga` now clamps x0 to `[lb_floor, clamp_max]`
 ## Phase 3 — filter cross-fixture campaign
 
 `examples/phase2_filter_campaign.rs` runs all eight H0–H7 arms on the steep-edge
-filter fixture with two seeds, 12 individuals, 12 generations, a 40-layer H1
-cap, a 60-layer decoder cap, and a 30,000 target. H7 enables the terminal
-LM/needle finish (`finish_h7 = true`), so the seeded arm can grow past its
-40-layer seed.
+filter fixture with five seeds (`20261121..20261125`), 12 individuals, 12
+generations, a 40-layer H1 cap, a 60-layer decoder cap, and a 30,000 target.
+H7 enables the terminal LM/needle finish (`finish_h7 = true`); H2 uses the
+same terminal finish but no mined seed bank.
 
 | arm | best merit | median merit | median evals | best layers | best pass R | best stop R | min nm | deep screen |
 |---|---:|---:|---:|---:|---:|---:|---:|---|
-| H0 | 2,537,335.623404 | 2,537,335.623404 | 5,825 | 19 | 10.2881 % | 86.4268 % | 30.48 | no |
-| H1 | 12,761,072.799092 | 16,446,230.894519 | 157 | 20 | 23.8023 % | 65.1335 % | 12.36 | no |
-| H2 | 6,502.397857 | 19,146.536651 | 2,503 | 39 | 0.2659 % | 99.1054 % | 10.00 | no |
-| H3 | 613,838.646928 | 834,845.976756 | 181 | 31 | 6.7147 % | 92.8688 % | 10.00 | no |
+| H0 | 2,508,738.644838 | 2,537,335.623404 | 5,016 | 19 | 7.4384 % | 82.3686 % | 11.28 | no |
+| H1 | 11,507,570.963514 | 15,700,600.461266 | 157 | 21 | 31.0453 % | 68.4584 % | 13.65 | no |
+| H2 | **969.321869** | 10,872.832468 | 2,503 | **43** | **0.0479 %** | **99.6655 %** | 10.00 | **yes** |
+| H3 | 450,359.454717 | 613,838.646928 | 181 | 22 | 2.3688 % | 92.3681 % | 11.33 | no |
 | H4 | 11,813,287.226372 | 11,990,956.171653 | 313 | 22 | 35.2440 % | 67.0423 % | 39.31 | no |
-| H5 | 16,035,504.578905 | 17,096,898.165037 | 157 | 25 | 48.1303 % | 66.7617 % | 18.36 | no |
-| H6 | 16,273,132.297823 | 34,122,760.373636 | 52 | 21 | 42.3815 % | 62.9791 % | 33.93 | no |
-| H7 | **1,287.867335** | **2,894.049323** | 3,042 | **56** | **0.1408 %** | **99.7152 %** | **10.00** | **yes** |
+| H5 | 13,226,060.715772 | 15,599,501.719540 | 157 | 24 | 57.0656 % | 76.3681 % | 10.07 | no |
+| H6 | 16,273,132.297823 | 17,419,979.811375 | 52 | 21 | 42.3815 % | 62.9791 % | 33.93 | no |
+| H7 | **203.083830** | **1,287.867335** | 3,042 | **47** | **0.0533 %** | **99.8444 %** | 10.00 | **yes** |
 
 “Deep screen” means at least 40 layers, a 10 nm minimum thickness, passband
 average `R < 2 %`, and stopband average `R > 99 %`.
 
-At the fixed 30,000 target, H2 and H7 succeed on both seeds: H2 ERT `2,495.0`,
-H7 ERT `2,590.0`. H0, H1, H3, H4, H5, and H6 have no success, so their ERT is
-`none`. Every two-seed pair is Holm-adjusted to `p = 1.0`; two seeds cannot
-support a family-level ranking claim.
+At the fixed 30,000 target, H2 succeeds on 4/5 seeds with ERT `4,045.8`; H7
+succeeds on 5/5 with ERT `3,302.0`. H0, H1, H3, H4, H5, and H6 have no
+success, so their ERT is `none`.
 
-The terminal finish changes the interpretation from the earlier negative
-check: H2 reaches 39 layers at 0.27 % pass / 99.11 % stop, one layer short of
-the deep screen, and H7 grows the 40-layer seed to 56 layers at 0.14 % pass /
-99.72 % stop, which passes the deep screen. This is a strong seeded +
-LM/needle result, not a pure GA discovery. H4/H5 add breadth but remain poor
-(35 %/67 % and 48 %/67 %); H3 alone reaches 31 layers but only 6.7 %/92.9 %;
-H1 and H6 do not get close.
+H2 is the first **GA-initialized** design to cross 40 layers and pass the deep
+screen: it starts from `run_recipe_a` without a mined seed bank, then the
+terminal finish grows it to 43 layers at 0.0479 % pass / 99.6655 % stop. H7,
+which starts from the 40-layer chirped seed, reaches 47 layers at 0.0533 % /
+99.8444 %. Both are seeded or GA-initialized rather than a pure fixed-width
+GA discovery, but the H2 path no longer needs the mined seed bank. H3 alone
+reaches 22 layers and 2.37 % pass; H1/H4/H5/H6 remain far from the target.
+
+The five-seed family has 28 pairs. No pair survives Holm at 0.05: the smallest
+raw two-sided rank-sum value is `0.00794` (complete separation), which becomes
+`0.2222` after correction. With 28 pairs, five seeds cannot produce a
+Holm-significant pair even under complete separation; seven seeds are the
+minimum for that ceiling. This is a target-success cross-fixture check, not a
+family-level ranking.
 
 The first run also exposed a material-order bug in the example: the decoder
 pool is ordered L,H by index, while the hand-built template was H,L, so the
