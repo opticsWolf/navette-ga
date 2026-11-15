@@ -7,8 +7,8 @@ repository, and every limitation is listed rather than inferred away.
 
 ## Environment
 
-- `navette` local `dev_ga` at `c25a0d5` (A1/A3 plus the A2 introspection and
-  public joint-scan additions below).
+- `navette` local `dev_ga` at `c9e964d` (A1/A3, A2 introspection, public
+  joint scan, and the core `ndarray` 0.16 lift).
 - `navette-ga` single crate, LGPL-3.0-or-later.
 - `cargo test --all-features`: **64 passed**.
 - `cargo clippy --all-targets --all-features -- -D warnings`: clean.
@@ -57,9 +57,10 @@ edges only when the multi-material edge lists contain it.
   `FitnessEvaluator::thickness_residual_jacobian`. The test verifies the parts
   sum to the scalar merit and the Jacobian has one column per free film.
   The returned Jacobian is the **residual** matrix plus its shape and film
-  rows; `merit_thickness_gradient` composes `2 Jᵀr`. Only a version-matched
-  `DMatrix` wrapper remains (navette's `ndarray` major differs from
-  `moors`').
+  rows; `merit_thickness_gradient` composes `2 Jᵀr`. With the core on
+  `ndarray` 0.16, `JacobianReport::as_array2` is a zero-copy view and
+  `into_array2` is a no-extra-copy owned matrix. A nalgebra `DMatrix` adapter
+  remains optional and unnecessary for DQD.
 
 Honesty boundary: the Jacobian prices thickness moves, not insertion
 positions. It is not a P(z) adjoint.
@@ -121,4 +122,6 @@ Limitations: the kurobako registration is a problem definition, not a full
 H0–H7 dispatch (H6 screening and the H7 seeded proposal arm are not wired);
 the archive illumination is not selection; no 40-layer production filter or
 merit-vs-depth bake is claimed; navette-native A4 and the released-navette
-gate remain open.
+gate remain open. The core `ndarray` lift (`c9e964d`) resolves the earlier
+navette/moors array-major split; it is a dependency-major change for the next
+navette release.

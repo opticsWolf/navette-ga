@@ -29,6 +29,7 @@ use navette::smatrix::synthesis::merit::{MeritSpec, SimCurves};
 use navette::smatrix::synthesis::pipeline::SpectralInputs;
 use navette::smatrix::synthesis::staged::{PolishReport, PolishScope};
 use navette::smatrix::synthesis::structure::{ClampReport, DesignStack, EdgeMaterials, LayerSpec};
+use ndarray::{Array2, ArrayView2};
 
 use crate::decoder::{AdjacencyGrammar, DecodedStack, MaterialPool as DecoderPool, Pins};
 
@@ -551,6 +552,39 @@ impl Default for EvaluatorOptions {
             lm: LmConfig::default(),
             thin_layer_policy: ThinLayerPolicy::Remove,
         }
+    }
+}
+
+impl JacobianReport {
+    /// Borrow the Jacobian as an `ndarray` view without copying.
+    ///
+    /// Navette, `moors`, and this crate now resolve the same `ndarray` 0.16
+    /// major, so this is a zero-copy adapter over the row-major `values`.
+    pub fn as_array2(&self) -> Result<ArrayView2<'_, f64>, String> {
+        if self.values.len() != self.rows * self.cols {
+            return Err(format!(
+                "JacobianReport: {} values for {}x{}",
+                self.values.len(),
+                self.rows,
+                self.cols
+            ));
+        }
+        ArrayView2::from_shape((self.rows, self.cols), &self.values)
+            .map_err(|error| format!("JacobianReport shape: {error}"))
+    }
+
+    /// Convert into an owned `Array2` without an extra matrix copy.
+    pub fn into_array2(self) -> Result<Array2<f64>, String> {
+        if self.values.len() != self.rows * self.cols {
+            return Err(format!(
+                "JacobianReport: {} values for {}x{}",
+                self.values.len(),
+                self.rows,
+                self.cols
+            ));
+        }
+        Array2::from_shape_vec((self.rows, self.cols), self.values)
+            .map_err(|error| format!("JacobianReport shape: {error}"))
     }
 }
 
@@ -1108,6 +1142,10 @@ mod tests {
         assert_eq!(jacobian.film_rows, vec![0]);
         assert_eq!(jacobian.values.len(), jacobian.rows);
         assert!(jacobian.rows > 0);
+        let view = jacobian.as_array2().unwrap();
+        assert_eq!(view.dim(), (jacobian.rows, jacobian.cols));
+        let owned = jacobian.clone().into_array2().unwrap();
+        assert_eq!(owned.dim(), (jacobian.rows, jacobian.cols));
         let gradient = ev.merit_thickness_gradient(&stack).unwrap().unwrap();
         assert_eq!(gradient.values.len(), 1);
         assert_eq!(gradient.film_rows, vec![0]);

@@ -24,7 +24,7 @@ amendments are implemented by the owner, never requested.*
 - **Navette `dev_ga`:** A3 `SmatrixContext::evaluate_many` (`f0748cf`), A1
   `synthesis::staged` (`b02c03f`), A2 `ga-introspect` merit parts and
   thickness residual Jacobian, and the public read-only
-  `cycle::joint_needle_scan` and the A2 merit gradient (`d9faa79`).
+  `cycle::joint_needle_scan` and the A2 merit gradient (`d9faa79`); `c9e964d` lifts the core to `ndarray` 0.16 so navette, `moors`, and `navette-ga` share one array major.
 - **`navette-ga`:** G2 decoder, G1 bridge, A1 memetic operator, fixed and
   variable-length Recipe A, the Phase 2 ring, and the new Phase 2/3 modules
   (`moors_split`, `qd`, `study`, `bench`). Full suite: **64 tests**.
@@ -45,7 +45,7 @@ amendments are implemented by the owner, never requested.*
 - **Release gate:** A1/A3/A2 are not in published navette 0.10.0. The bridge
   is local-path-only until a navette release carries them; `cargo publish` is
   expected to fail verification meanwhile.
-- **Remaining:** an A2 version-matched `DMatrix` wrapper, navette-native
+- **Remaining:** an optional nalgebra `DMatrix` adapter (not required), navette-native
   A4 (per-material bounds and insert/migrate grammar hook), H6/H7 dispatch, a
   40-layer production filter and merit-vs-depth bake, and the
   released-navette gate.
@@ -362,9 +362,10 @@ extended ring; fully connected only as the low-diameter ablation.
   bridge.* The landed doors are per-target `merit_parts()`, the analytic
   **residual** thickness Jacobian as `(values, rows, cols, film_rows)`, and
   the merit gradient `2 Jᵀr`. The bridge returns `JacobianReport` and
-  `MeritGradient`; only a version-matched `DMatrix` wrapper remains, because
-  navette's `ndarray` major and `moors`' differ. The QD/DQD loop reads the residual
-  Jacobian without re-solving. Feature-gated (`ga-introspect`) to keep default
+  `MeritGradient`; after the `ndarray` 0.16 lift, `JacobianReport` also has a
+  zero-copy `as_array2` view and a no-extra-copy `into_array2` adapter. A
+  literal `DMatrix` would still add nalgebra and is optional, not needed for
+  DQD. The QD/DQD loop reads the residual Jacobian without re-solving. Feature-gated (`ga-introspect`) to keep default
   builds lean. (Honesty note per v4 Appendix B: this Jacobian prices thickness
   moves, not insertion positions — it is not a P(z) adjoint and is never
   described as one.)
