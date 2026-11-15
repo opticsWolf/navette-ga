@@ -11,6 +11,7 @@
 //! once it lands. Lamarckian write-back is the default; the Baldwinian variant
 //! is kept for the V21 ablation.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use navette::lsq::backends::LsqResult;
@@ -720,6 +721,11 @@ pub struct JacobianReport {
 #[derive(Clone)]
 pub struct FitnessEvaluator {
     ctx: SmatrixContext,
+    /// Solver-work counter shared by clones of this evaluator. `evaluate`
+    /// counts one, `evaluate_batch` counts each stack, and an LM refinement
+    /// adds the solver's own `evals`. It is deliberately not a wall-clock
+    /// timer: equal-budget comparisons use it to stop at the same solver work.
+    evals: Arc<AtomicUsize>,
 }
 
 impl FitnessEvaluator {
@@ -782,11 +788,34 @@ impl FitnessEvaluator {
                 clamp_accumulator: ClampReport::default(),
                 envs: None,
             },
+            evals: Arc::new(AtomicUsize::new(0)),
         })
+    }
+
+    /// Solver evaluations counted by this evaluator and all its clones.
+    pub fn evaluations(&self) -> usize {
+        self.evals.load(Ordering::Relaxed)
+    }
+
+    /// Reset the shared solver counter.
+    pub fn reset_evaluations(&self) {
+        self.evals.store(0, Ordering::Relaxed);
+    }
+
+    /// A clone with the same problem context but a fresh counter.
+    ///
+    /// Use this for independent comparison arms; an ordinary `clone()` shares
+    /// the counter so every GA fitness closure contributes to one budget.
+    pub fn fresh_counter(&self) -> Self {
+        Self {
+            ctx: self.ctx.clone(),
+            evals: Arc::new(AtomicUsize::new(0)),
+        }
     }
 
     /// Scalar joint merit of one stack.
     pub fn evaluate(&self, stack: &DesignStack) -> Result<f64, String> {
+        self.evals.fetch_add(1, Ordering::Relaxed);
         self.ctx.evaluate_merit(stack)
     }
 
@@ -798,12 +827,15 @@ impl FitnessEvaluator {
     /// containing A3 is required before this crate can be published; see the
     /// release-gate note on the navette dependency in `Cargo.toml`.
     pub fn evaluate_batch(&self, stacks: &[DesignStack]) -> Result<Vec<f64>, String> {
+        self.evals.fetch_add(stacks.len(), Ordering::Relaxed);
         self.ctx.evaluate_many(stacks)
     }
 
     /// Bounded LM thickness finish, in place. Returns the post-finish merit.
     pub fn refine(&mut self, stack: &mut DesignStack) -> Result<f64, String> {
-        self.ctx.refine_thicknesses(stack)
+        // `refine_report` already accounted for the LM's own evaluation count.
+        let (merit, _) = self.refine_report(stack)?;
+        Ok(merit)
     }
 
     /// Bounded LM finish plus the solver's termination report.
@@ -815,7 +847,11 @@ impl FitnessEvaluator {
         &mut self,
         stack: &mut DesignStack,
     ) -> Result<(f64, Option<LsqResult>), String> {
-        self.ctx.refine_thicknesses_report(stack)
+        let result = self.ctx.refine_thicknesses_report(stack)?;
+        if let Some(report) = &result.1 {
+            self.evals.fetch_add(report.evals, Ordering::Relaxed);
+        }
+        Ok(result)
     }
 
     pub fn simulate(&self, stack: &DesignStack) -> Result<SimCurves, String> {
@@ -1142,6 +1178,26 @@ mod tests {
         let ev = evaluator(zero_reflectance_spec(0.0, 550.0));
         let sim = ev.simulate(stack).unwrap();
         sim.curve(CurveId::Rs).unwrap()[0]
+    }
+
+    #[test]
+    fn evaluator_counter_is_shared_by_clones_and_can_be_forked() {
+        let ev = evaluator(zero_reflectance_spec(0.0, 550.0));
+        let stack = fixed_stack(vec![constant("H", 2.2, 100.0, 1)], 1);
+        assert_eq!(ev.evaluations(), 0);
+        ev.evaluate(&stack).unwrap();
+        assert_eq!(ev.evaluations(), 1);
+        let clone = ev.clone();
+        clone.evaluate(&stack).unwrap();
+        assert_eq!(ev.evaluations(), 2);
+        clone.evaluate_batch(&[stack.clone(), stack]).unwrap();
+        assert_eq!(ev.evaluations(), 4);
+
+        let fresh = ev.fresh_counter();
+        assert_eq!(fresh.evaluations(), 0);
+        ev.reset_evaluations();
+        assert_eq!(ev.evaluations(), 0);
+        assert_eq!(fresh.evaluations(), 0);
     }
 
     #[test]

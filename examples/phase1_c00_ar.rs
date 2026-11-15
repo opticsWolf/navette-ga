@@ -6,7 +6,8 @@
 //! the scan certificate printed with the result. It is intentionally small
 //! enough to rerun as a check; the numbers in the ledger note come from this
 //! exact command. Pass `--memetic` to run the same config through the
-//! mid-loop H3 schedule and print its wall-time share.
+//! mid-loop H3 schedule and print its wall-time share, or `--h0-budget N` to
+//! compare H0 and H1 at the same solver-evaluation count.
 
 use std::collections::BTreeMap;
 
@@ -20,8 +21,8 @@ use navette::smatrix::synthesis::structure::LayerSpec;
 use navette_ga::bridge::{EvaluatorOptions, FitnessEvaluator, MemeticOperator, StackTemplate};
 use navette_ga::decoder::Decoder;
 use navette_ga::engines::{
-    finish_recipe_a, run_recipe_a, run_recipe_a_memetic, MemeticSchedule, RecipeAConfig,
-    TerminalReport,
+    compare_h0_and_ga_at_budget, finish_recipe_a, run_recipe_a, run_recipe_a_memetic, H0Config,
+    MemeticSchedule, RecipeAConfig, TerminalReport,
 };
 use navette_ga::materials::{decoder_pool, load_library, stack_template, ThicknessBounds};
 
@@ -133,6 +134,38 @@ fn main() {
             .and_then(|value| value.parse().ok())
             .unwrap_or(default)
     };
+    if let Some(budget) = args
+        .iter()
+        .position(|arg| arg == "--h0-budget")
+        .and_then(|index| args.get(index + 1))
+        .and_then(|value| value.parse::<usize>().ok())
+    {
+        let h0_cfg = H0Config {
+            starts: 1,
+            max_layers: cfg.max_layers,
+            mutation_sigma: cfg.mutation_sigma,
+            needle_steps: 0,
+            seed: cfg.seed,
+        };
+        let comparison =
+            compare_h0_and_ga_at_budget(&decoder, &template, &evaluator, &h0_cfg, &cfg, budget)
+                .unwrap();
+        println!("PHASE2_H0_BUDGET");
+        for (name, arm) in [("h0", &comparison.h0), ("ga", &comparison.ga)] {
+            let sim = evaluator.simulate(&arm.result.stack).unwrap();
+            let reflectance = sim.curve(CurveId::Rs).unwrap();
+            let avg_r = reflectance.iter().sum::<f64>() / reflectance.len() as f64;
+            println!(
+                "{name}_merit={:.9} {name}_avg_R={avg_r:.9} {name}_layers={} {name}_evaluations={}",
+                arm.result.merit,
+                arm.result.decoded.len(),
+                arm.evaluations
+            );
+        }
+        println!("budget={}", comparison.budget);
+        return;
+    }
+
     let memetic = args.iter().any(|arg| arg == "--memetic");
     let (result, memetic_report) = if memetic {
         let defaults = MemeticSchedule::default();

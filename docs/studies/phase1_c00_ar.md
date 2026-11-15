@@ -97,6 +97,15 @@ aggressive setting (`10 / 8 / 2`) reached `avg_R = 0.7941 %` but cost 63.4 %
 of wall time and was worse on this seed; the Phase 2 ledger holds the full
 schedule table and caveat.
 
+## Equal-budget H0 control
+
+`cargo run --release --example phase1_c00_ar -- --h0-budget 2000` runs the
+classical random-start/LM control and H1 at the same solver-evaluation count.
+The recorded runs gave H0 `avg_R = 16.08 %` at 2,048 evaluations versus H1
+`3.3849 %` at 2,049; at 20,000 evaluations H0 improved to `6.7780 %` while H1
+stayed at `3.3849 %`. This is one seed and one target; see the Phase 2 ledger
+for the caveat.
+
 ## Not covered
 
 This ledger does not claim C00's exact published design, a fabricated sample, or

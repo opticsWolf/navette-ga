@@ -10,7 +10,7 @@ repository, and every limitation is listed rather than inferred away.
 - `navette` local `dev_ga` at `c9e964d` (A1/A3, A2 introspection, public
   joint scan, and the core `ndarray` 0.16 lift).
 - `navette-ga` single crate, LGPL-3.0-or-later.
-- `cargo test --all-features`: **69 passed**.
+- `cargo test --all-features`: **71 passed**.
 - `cargo clippy --all-targets --all-features -- -D warnings`: clean.
 - `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features`: clean.
 - `navette` with `ga-introspect`: **801 passed, 1 ignored**.
@@ -49,8 +49,8 @@ unit tests did not catch:
   the island/illuminated trajectories and is a correctness fix, not a tuning
   choice.
 
-The 40-layer bake, equal-compute H0 comparison, and H6/H7 implementations
-remain open.
+The 40-layer steep-edge filter, the multi-seed equal-compute H0/H1/H3
+campaign, and H6/H7 implementations remain open.
 
 ## Phase 2 — joint boundary needles
 
@@ -205,8 +205,33 @@ and the insertion-heavy Recipe B path, not a larger cap on the AR fixture.
 refinement, an optional memetic needle step, and a second refinement. It
 returns the same `RecipeAResult` shape as the GA so the comparison harness can
 report it without a second result type. A start whose LM path leaves the
-decoder's A4 bounds is discarded rather than aborting the arm. Equal-compute
-budgeting is still not implemented.
+decoder's A4 bounds is discarded rather than aborting the arm. The budgeted
+runner and the first equal-solver-work comparison are below.
+
+## Phase 2 — equal-budget H0 vs H1
+
+`FitnessEvaluator` now carries a shared solver-work counter: one `evaluate`
+call, one per stack in `evaluate_batch`, and the LM solver's own `evals` from
+`refine_report`. Ordinary evaluator clones share the counter; `fresh_counter()`
+is the comparison-arm fork. `compare_h0_and_ga_at_budget` gives H0 and H1
+separate counters and stops each at the requested budget.
+
+C00-class run, same seed and 32-layer search space; H0 is random-start
+needle-plus-LM multi-start, H1 is the ordinary Recipe A GA:
+
+| budget | arm | merit | avg R | layers | actual evaluations |
+|---:|---|---:|---:|---:|---:|
+| 2,000 | H0 | 717509.744016 | 16.0800 % | 13 | 2,048 |
+| 2,000 | H1 | 24685.958395 | 3.3849 % | 7 | 2,049 |
+| 20,000 | H0 | 126253.031531 | 6.7780 % | 14 | 20,005 |
+| 20,000 | H1 | 24685.958395 | 3.3849 % | 7 | 20,033 |
+
+On this fixture the classical control loses at both budgets; the H0 arm
+improves with more LM work but does not catch the GA. This is one seed and one
+target, and H0's random 32-layer starts are a deliberately hard version of the
+control, so it is evidence against the strong "H0 wins at 5–10 layers" risk,
+not a universal claim. The H1 plateau also shows that more evaluations alone
+do not improve this fixed-width search after it converges.
 
 ## Phase 2 — S4/F1 archive and S6 split
 
@@ -250,7 +275,8 @@ measured on the same physics.
 Limitations: the kurobako registration is a problem definition, not a full
 H0–H7 dispatch (H6 screening and the H7 seeded proposal arm are not wired);
 the archive illumination is not selection; the C00 depth bake is a negative
-scale signal, not a 40-layer steep-edge filter; navette-native A4 and the
-released-navette gate remain open. The core `ndarray` lift (`c9e964d`) resolves the earlier
+scale signal, not a 40-layer steep-edge filter; the equal-budget H0/H1 result
+is one seed and one target; navette-native A4 and the released-navette gate
+remain open. The core `ndarray` lift (`c9e964d`) resolves the earlier
 navette/moors array-major split; it is a dependency-major change for the next
 navette release.

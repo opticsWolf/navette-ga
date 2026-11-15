@@ -522,6 +522,22 @@ pub struct IlluminatedResult {
     pub generations: usize,
 }
 
+/// One arm of an equal-budget comparison.
+#[derive(Clone, Debug)]
+pub struct BudgetArm {
+    pub result: RecipeAResult,
+    /// Solver evaluations actually spent, including LM function evaluations.
+    pub evaluations: usize,
+}
+
+/// H0 versus GAs at the same solver-work budget.
+#[derive(Clone, Debug)]
+pub struct BudgetComparison {
+    pub budget: usize,
+    pub h0: BudgetArm,
+    pub ga: BudgetArm,
+}
+
 /// Best design plus the policy bookkeeping from an island run.
 #[derive(Clone, Debug)]
 pub struct IslandRecipeResult {
@@ -923,6 +939,37 @@ pub fn run_h0_control(
     cfg: &H0Config,
     operator: Option<&MemeticOperator>,
 ) -> Result<RecipeAResult, String> {
+    run_h0_control_inner(decoder, template, evaluator, cfg, operator, None)
+}
+
+/// H0 with a solver-evaluation budget.
+///
+/// The loop stops before a start would begin once `budget` solver evaluations
+/// have been spent. A start may overshoot by its own LM work; the comparison
+/// reports the actual count. `cfg.starts` still bounds the loop, so pass a
+/// value at least as large as `budget` for a budget-limited run.
+pub fn run_h0_control_budget(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &mut FitnessEvaluator,
+    cfg: &H0Config,
+    operator: Option<&MemeticOperator>,
+    budget: usize,
+) -> Result<RecipeAResult, String> {
+    if budget == 0 {
+        return Err("H0 budget must be >= 1".into());
+    }
+    run_h0_control_inner(decoder, template, evaluator, cfg, operator, Some(budget))
+}
+
+fn run_h0_control_inner(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &mut FitnessEvaluator,
+    cfg: &H0Config,
+    operator: Option<&MemeticOperator>,
+    budget: Option<usize>,
+) -> Result<RecipeAResult, String> {
     if cfg.starts == 0 {
         return Err("H0 needs at least one start".into());
     }
@@ -941,6 +988,9 @@ pub fn run_h0_control(
         navette::smatrix::synthesis::structure::DesignStack,
     )> = None;
     for _ in 0..cfg.starts {
+        if budget.is_some_and(|budget| evaluator.evaluations() >= budget) {
+            break;
+        }
         let mut rng = make_rng();
         let genome = Genome::from(
             (0..cfg.max_layers)
@@ -1103,6 +1153,71 @@ pub fn run_recipe_a(
         stack,
         merit,
         generations: cfg.generations,
+    })
+}
+
+/// Run Recipe A until a solver-evaluation budget is reached.
+///
+/// One generation is the stopping grain: the loop checks the shared evaluator
+/// counter before each generation, so the final count can overshoot by at most
+/// one population evaluation. The returned `generations` field is the number
+/// actually advanced, not the configured maximum.
+pub fn run_recipe_a_budget(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    cfg: &RecipeAConfig,
+    budget: usize,
+) -> Result<RecipeAResult, String> {
+    validate_recipe_a(cfg)?;
+    template.check_grammar(decoder.pool(), decoder.grammar())?;
+    if budget == 0 {
+        return Err("Recipe A budget must be >= 1".into());
+    }
+
+    let mut population = initial_population(cfg, cfg.seed);
+    let mut generations = 0usize;
+    for generation in 0..cfg.generations {
+        if generation > 0 && evaluator.evaluations() >= budget {
+            break;
+        }
+        let seed = cfg.seed.map(|base| {
+            base.wrapping_add(((generation as u64).wrapping_mul(1009)).wrapping_add(7))
+        });
+        let mut ga = build_recipe_a_ga(
+            cfg,
+            decoder,
+            template,
+            evaluator,
+            Some(population),
+            1,
+            seed,
+            None,
+        )?;
+        ga.run().map_err(|e| e.to_string())?;
+        population = ga.population.clone();
+        generations += 1;
+    }
+
+    let best = population
+        .chromosomes
+        .iter()
+        .min_by(|a, b| a.fitness().total_cmp(&b.fitness()))
+        .cloned()
+        .ok_or_else(|| "Recipe A produced an empty population".to_string())?;
+    if !best.fitness().is_finite() {
+        return Err("Recipe A found no legal design".into());
+    }
+    let best_genome = best.to_genome();
+    let decoded = decoder.decode(&best_genome).map_err(|e| e.to_string())?;
+    let stack = checked_assemble(decoder, template, &decoded)?;
+    let merit = evaluator.evaluate(&stack)?;
+    Ok(RecipeAResult {
+        best_genome,
+        decoded,
+        stack,
+        merit,
+        generations,
     })
 }
 
@@ -1698,6 +1813,51 @@ pub fn run_recipe_a_islands_memetic(
         None,
         Some((operator, schedule)),
     )
+}
+
+/// Compare H0 and H1 at the same solver-evaluation budget.
+///
+/// The budget counts `FitnessEvaluator::evaluate` calls and the LM solver's
+/// own `evals`; it is a compute proxy, not a wall-clock timer. Each arm gets a
+/// fresh counter (ordinary evaluator clones share one), and the caller should
+/// use the actual counts in `BudgetArm::evaluations` when reporting the result.
+/// The GA is allowed to overshoot by at most one population generation and H0
+/// by one start.
+pub fn compare_h0_and_ga_at_budget(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    h0_cfg: &H0Config,
+    ga_cfg: &RecipeAConfig,
+    budget: usize,
+) -> Result<BudgetComparison, String> {
+    if budget == 0 {
+        return Err("budget comparison needs budget >= 1".into());
+    }
+
+    let mut h0_cfg = *h0_cfg;
+    h0_cfg.starts = h0_cfg.starts.max(budget);
+    let mut h0_eval = evaluator.fresh_counter();
+    let h0 = run_h0_control_budget(decoder, template, &mut h0_eval, &h0_cfg, None, budget)?;
+    let h0_evaluations = h0_eval.evaluations();
+
+    let mut ga_cfg = ga_cfg.clone();
+    ga_cfg.generations = ga_cfg.generations.max(budget);
+    let ga_eval = evaluator.fresh_counter();
+    let ga = run_recipe_a_budget(decoder, template, &ga_eval, &ga_cfg, budget)?;
+    let ga_evaluations = ga_eval.evaluations();
+
+    Ok(BudgetComparison {
+        budget,
+        h0: BudgetArm {
+            result: h0,
+            evaluations: h0_evaluations,
+        },
+        ga: BudgetArm {
+            result: ga,
+            evaluations: ga_evaluations,
+        },
+    })
 }
 
 /// Run the I1 cross-island multi-parent experiment.
@@ -2367,6 +2527,55 @@ mod tests {
         let result = run_h0_control(&decoder, &template, &mut evaluator, &cfg, None).unwrap();
         assert!(result.merit.is_finite());
         assert!(result.decoded.len() <= cfg.max_layers);
+    }
+
+    #[test]
+    fn h0_and_ga_stop_at_the_same_solver_budget() {
+        let pool = MaterialPool::new(vec![
+            Material::new("H", 20.0, 200.0).unwrap(),
+            Material::new("L", 10.0, 150.0).unwrap(),
+        ])
+        .unwrap();
+        let decoder = Decoder::without_constraints(pool).unwrap();
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0),
+            constant("substrate", 1.52, 0.0),
+            vec![constant("H", 2.2, 0.0), constant("L", 1.46, 0.0)],
+        )
+        .unwrap();
+        let evaluator = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            zero_spec(),
+            EvaluatorOptions {
+                clamp_min_nm: 20.0,
+                clamp_max_nm: 150.0,
+                ..EvaluatorOptions::default()
+            },
+        )
+        .unwrap();
+        let h0 = H0Config {
+            starts: 1,
+            max_layers: 3,
+            mutation_sigma: 0.2,
+            needle_steps: 0,
+            seed: Some(31),
+        };
+        let ga = RecipeAConfig {
+            population_size: 8,
+            generations: 1,
+            max_layers: 3,
+            mutation_sigma: 0.2,
+            seed: Some(31),
+        };
+        let comparison =
+            compare_h0_and_ga_at_budget(&decoder, &template, &evaluator, &h0, &ga, 100).unwrap();
+        assert_eq!(comparison.budget, 100);
+        assert!(comparison.h0.evaluations >= 100);
+        assert!(comparison.ga.evaluations >= 100);
+        assert!(comparison.h0.result.merit.is_finite());
+        assert!(comparison.ga.result.merit.is_finite());
+        assert!(comparison.ga.result.generations >= 1);
     }
 
     #[test]

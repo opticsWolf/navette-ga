@@ -16,7 +16,9 @@ terminal LM/needle finish are implemented and tested. The Phase 1 exit
 artifact is recorded in
 [`docs/studies/phase1_c00_ar.md`](docs/studies/phase1_c00_ar.md): a C00-class
 H/L AR over 400–900 nm with Lamarckian write-back and a zero-actual-improvement
-scan certificate.
+scan certificate. The same example can run the H3 schedule (`--memetic`) or
+an equal-solver-budget H0/H1 comparison (`--h0-budget N`); the first C00
+comparison puts H1 ahead at 2k and 20k evaluations.
 
 The boundary path now covers read-only joint gap acceptance, structural
 candidate enumeration, transactional chosen-locus insertion, the spectral
@@ -28,7 +30,7 @@ exposed through the bridge/decoder. Phase 2/3 modules add the S4/F1 MOME
 archive and illuminated Recipe A run, the S6 `moors` split, the H0 control,
 I1 cross-island multi-parent crossover, the G7 campaign queue/pins/pruner,
 the G8 kurobako problem/H0–H7 registry, and the G4/S2 mid-loop needle
-schedule for single-island and ring runs. Full suite: **69 tests**;
+schedule for single-island and ring runs. Full suite: **71 tests**;
 `--all-features` includes the kurobako proof module.
 
 Limits are explicit: navette-native A4 (per-material bounds and the
