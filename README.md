@@ -1,6 +1,7 @@
 # navette-ga
 
 [![License: LGPL-3.0-or-later](https://img.shields.io/badge/license-LGPL--3.0--or--later-blue)](COPYING.LESSER)
+[![ci](https://github.com/opticsWolf/navette-ga/actions/workflows/ci.yml/badge.svg)](https://github.com/opticsWolf/navette-ga/actions/workflows/ci.yml)
 
 Genetic / evolutionary thin-film synthesis on top of [navette](https://github.com/opticsWolf/Navette).
 This is the working repository for the strategy set in

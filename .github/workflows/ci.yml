@@ -1,0 +1,53 @@
+name: ci
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out navette-ga
+        uses: actions/checkout@v4
+        with:
+          path: navette-ga
+
+      # The crate uses a path dependency on the navette dev branch during the
+      # pre-release window. Keep both checkouts as siblings so Cargo.toml's
+      # ../Navette/rust/navette path resolves exactly as it does locally.
+      - name: Check out navette dev branch
+        uses: actions/checkout@v4
+        with:
+          repository: opticsWolf/Navette
+          ref: dev_ga
+          path: Navette
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.0
+          components: rustfmt, clippy
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: navette-ga
+
+      - name: Format
+        working-directory: navette-ga
+        run: cargo fmt --all -- --check
+
+      - name: Test
+        working-directory: navette-ga
+        run: cargo test --all-features
+
+      - name: Clippy
+        working-directory: navette-ga
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Rustdoc
+        working-directory: navette-ga
+        run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
