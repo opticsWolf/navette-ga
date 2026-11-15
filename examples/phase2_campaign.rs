@@ -17,7 +17,7 @@ use navette::smatrix::synthesis::structure::LayerSpec;
 use navette_ga::bridge::{EvaluatorOptions, FitnessEvaluator, MemeticOperator, StackTemplate};
 use navette_ga::decoder::{Decoder, Genome, LayerGene};
 use navette_ga::engines::{
-    H0Config, IslandRecipeConfig, MemeticSchedule, RecipeAConfig, VlRecipeAConfig,
+    H0Config, IslandRecipeConfig, MemeticSchedule, ProposalConfig, RecipeAConfig, VlRecipeAConfig,
 };
 use navette_ga::materials::{decoder_pool, load_library, stack_template, ThicknessBounds};
 
@@ -155,6 +155,10 @@ fn main() {
         operator: Some(operator),
         seeds: vec![seed],
         seed_fraction: 0.5,
+        proposal: Some(ProposalConfig {
+            noise_sigma: 0.10,
+            proposals_per_seed: 4,
+        }),
         terminal_insertions: 20,
         ..ComparisonOptions::default()
     };

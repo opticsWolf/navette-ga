@@ -269,7 +269,7 @@ implements each arm:
 | H4 | `run_recipe_a_tribes` with alternating island mutation regimes |
 | H5 | `run_recipe_a_illuminated` |
 | H6 | `run_recipe_a_surrogate` |
-| H7 | `run_recipe_a_vl_seeded` |
+| H7 | `run_recipe_a_vl_seeded` or `run_recipe_a_vl_proposed` |
 
 `ComparisonOptions` carries the shared configs, the operator, the mined seed
 bank, and the terminal insertion cap. H2/H3 return an explicit error when no
@@ -307,7 +307,7 @@ run.
 | H4 | 16,915.836768 | 18,191.068420 | 1,489 | 2.8262 % | 1 |
 | H5 | 19,035.854603 | 22,710.897981 | 745 | 2.9958 % | 1 |
 | H6 | 25,282.401153 | 26,011.903557 | **61** | 3.4191 % | 6 |
-| H7 | 16,671.984310 | 16,674.717319 | 745 | 2.8108 % | 2 |
+| H7 | 16,671.882576 | 16,689.336434 | 745 | 2.8108 % | 2 |
 
 At the fixed 30,000 target, ERT is: H0 `none` (0/3 successes), H1 `745.0`,
 H2 `831.7`, H3 `771.0`, H4 `1,489.0`, H5 `745.0`, H6 `97.0`, H7 `745.0`.
@@ -426,6 +426,15 @@ variable-length Recipe A population from a supplied `Genome` bank and the rest
 randomly. Seeds are validated against the decoder and the VL bounds before the
 run. This is the mined-motif fallback for S8/H7, not a diffusion model: the
 caller must record where the seeds came from.
+
+`engines::run_recipe_a_vl_proposed` adds an optional proposal bank: each seed
+is retained and `proposals_per_seed` Gaussian copies perturb the material and
+thickness keys while preserving the seed's presence pattern. In the C00
+campaign, four copies at `noise_sigma = 0.10` left H7 at two decoded layers
+and `2.8108 %` average reflectance, essentially unchanged from the raw seed
+bank. That is a useful negative: proposal expansion adds local thickness
+diversity, not the missing deep architecture. It is a denoising-style
+proposal generator, not a trained diffusion model.
 
 The C00 example exposes `--seeded`. It uses a three-layer H/L/H motif at
 25 % population share and the same 100-generation config as the other arms. The

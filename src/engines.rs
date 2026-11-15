@@ -2536,6 +2536,104 @@ pub fn run_recipe_a_vl_seeded(
     })
 }
 
+/// Gaussian proposal expansion for an H7 mined-seed bank.
+///
+/// This is a proposal generator, not a trained diffusion model: every seed is
+/// retained, and `proposals_per_seed` noisy copies are added by perturbing the
+/// material and thickness keys while preserving the seed's presence pattern.
+/// The decoder still decides legality and presence, and the caller records the
+/// seed provenance.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ProposalConfig {
+    pub noise_sigma: f64,
+    pub proposals_per_seed: usize,
+}
+
+impl Default for ProposalConfig {
+    fn default() -> Self {
+        Self {
+            noise_sigma: 0.08,
+            proposals_per_seed: 4,
+        }
+    }
+}
+
+impl ProposalConfig {
+    fn validate(self) -> Result<(), String> {
+        if !self.noise_sigma.is_finite() || self.noise_sigma < 0.0 {
+            return Err("proposal noise_sigma must be finite and non-negative".into());
+        }
+        if self.proposals_per_seed == 0 {
+            return Err("proposal needs at least one copy per seed".into());
+        }
+        Ok(())
+    }
+}
+
+fn expand_seed_bank(
+    seeds: &[Genome],
+    cfg: &VlRecipeAConfig,
+    proposal: ProposalConfig,
+) -> Result<Vec<Genome>, String> {
+    proposal.validate()?;
+    if seeds.is_empty() {
+        return Err("proposal expansion needs at least one seed".into());
+    }
+    let seed = cfg.seed.map(|base| base.wrapping_add(7919));
+    set_seed(seed);
+    let mut rng = make_rng();
+    let mut bank = Vec::with_capacity(seeds.len() * (1 + proposal.proposals_per_seed));
+    for seed_genome in seeds {
+        bank.push(seed_genome.clone());
+        for _ in 0..proposal.proposals_per_seed {
+            let genes = seed_genome
+                .genes()
+                .iter()
+                .map(|gene| {
+                    LayerGene::new(
+                        wrap01(gene.material + gaussian(&mut rng) * proposal.noise_sigma),
+                        wrap01(gene.thickness + gaussian(&mut rng) * proposal.noise_sigma),
+                        gene.presence,
+                    )
+                })
+                .collect::<Vec<_>>();
+            bank.push(Genome::from(genes));
+        }
+    }
+    if bank
+        .iter()
+        .any(|genome| genome.len() < cfg.min_layers || genome.len() > cfg.max_layers)
+    {
+        return Err("proposal expansion produced a genome outside the VL bounds".into());
+    }
+    Ok(bank)
+}
+
+/// Run variable-length Recipe A from a mined seed bank plus Gaussian proposals.
+///
+/// The seed bank is expanded by [`ProposalConfig`] before the H7 seeded runner
+/// sees it. This is a denoising-style proposal arm, not a learned diffusion
+/// model; it gives the initial population more thickness/material diversity
+/// without discarding the mined motifs.
+pub fn run_recipe_a_vl_proposed(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    cfg: &VlRecipeAConfig,
+    seeds: &[Genome],
+    seed_fraction: f64,
+    proposal: ProposalConfig,
+) -> Result<RecipeAResult, String> {
+    validate_vl_recipe_a(cfg)?;
+    let bank = expand_seed_bank(seeds, cfg, proposal)?;
+    for (index, genome) in bank.iter().enumerate() {
+        decoder
+            .decode(genome)
+            .map_err(|error| format!("proposal {index}: {error}"))?;
+    }
+    run_recipe_a_vl_seeded(decoder, template, evaluator, cfg, &bank, seed_fraction)
+}
+
 /// Run Recipe A with a true variable-length chromosome.
 ///
 /// The GA samples lengths in `[min_layers, max_layers]`; its mutation
@@ -3662,6 +3760,32 @@ mod tests {
         .unwrap();
         assert!(result.merit.is_finite());
         assert!(result.decoded.len() <= cfg.max_layers);
+
+        let proposed = run_recipe_a_vl_proposed(
+            &decoder,
+            &template,
+            &evaluator,
+            &cfg,
+            std::slice::from_ref(&seed),
+            0.75,
+            ProposalConfig {
+                noise_sigma: 0.1,
+                proposals_per_seed: 2,
+            },
+        )
+        .unwrap();
+        assert!(proposed.merit.is_finite());
+        assert!(proposed.decoded.len() <= cfg.max_layers);
+        assert!(run_recipe_a_vl_proposed(
+            &decoder,
+            &template,
+            &evaluator,
+            &cfg,
+            &[],
+            0.5,
+            ProposalConfig::default(),
+        )
+        .is_err());
 
         let long = Genome::from(vec![LayerGene::new(0.25, 0.5, 1.0); 5]);
         assert!(

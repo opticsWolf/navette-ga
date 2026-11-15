@@ -67,7 +67,8 @@ amendments are implemented by the owner, never requested.*
   homogenisation readout; G7 campaign queue/pins/pruner/importance; G8
   kurobako problem and H0-H7 registry; H6's linear surrogate screen
   (`run_recipe_a_surrogate`); H7's variable-length seeded/mined-motif fallback
-  (`run_recipe_a_vl_seeded`); and `bench::run_comparison_arm` /
+  (`run_recipe_a_vl_seeded`) plus an optional Gaussian proposal expansion
+  (`run_recipe_a_vl_proposed`); and `bench::run_comparison_arm` /
   `run_comparison_campaign` dispatch the H0–H7 registry over fixed seed lists.
   `bench::expected_running_time` adds a fixed-target censored ERT report, and
   `bench::family_rank_sum` applies pairwise Mann–Whitney with Holm correction

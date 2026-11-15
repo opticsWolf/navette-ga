@@ -20,9 +20,10 @@ use crate::bridge::{FitnessEvaluator, MemeticOperator, StackTemplate};
 use crate::decoder::{Decoder, Genome, LayerGene};
 use crate::engines::{
     finish_recipe_a, run_h0_control, run_recipe_a, run_recipe_a_illuminated, run_recipe_a_memetic,
-    run_recipe_a_surrogate, run_recipe_a_tribes, run_recipe_a_vl_seeded, H0Config,
-    HeterogeneousTribeConfig, IslandRecipeConfig, IslandStrategy, MemeticSchedule, RecipeAConfig,
-    RecipeAResult, SurrogateConfig, TribeConstraint, VlRecipeAConfig,
+    run_recipe_a_surrogate, run_recipe_a_tribes, run_recipe_a_vl_proposed, run_recipe_a_vl_seeded,
+    H0Config, HeterogeneousTribeConfig, IslandRecipeConfig, IslandStrategy, MemeticSchedule,
+    ProposalConfig, RecipeAConfig, RecipeAResult, SurrogateConfig, TribeConstraint,
+    VlRecipeAConfig,
 };
 use crate::qd::ArchiveConfig;
 use crate::study::{holm_bonferroni, mann_whitney_u, RankSumReport};
@@ -266,6 +267,9 @@ pub struct ComparisonOptions {
     pub operator: Option<MemeticOperator>,
     pub seeds: Vec<Genome>,
     pub seed_fraction: f64,
+    /// Optional Gaussian proposal expansion for H7. `None` uses the raw seed
+    /// bank (the mined-seed fallback).
+    pub proposal: Option<ProposalConfig>,
     /// Insertion cap passed to the H2 terminal finish.
     pub terminal_insertions: usize,
 }
@@ -283,6 +287,7 @@ impl Default for ComparisonOptions {
             operator: None,
             seeds: Vec::new(),
             seed_fraction: 1.0,
+            proposal: None,
             terminal_insertions: 20,
         }
     }
@@ -398,14 +403,26 @@ pub fn run_comparison_arm(
             if options.seeds.is_empty() {
                 return Err("H7 needs a non-empty mined-seed bank".into());
             }
-            run_recipe_a_vl_seeded(
-                decoder,
-                template,
-                evaluator,
-                &options.vl,
-                &options.seeds,
-                options.seed_fraction,
-            )?
+            if let Some(proposal) = options.proposal {
+                run_recipe_a_vl_proposed(
+                    decoder,
+                    template,
+                    evaluator,
+                    &options.vl,
+                    &options.seeds,
+                    options.seed_fraction,
+                    proposal,
+                )?
+            } else {
+                run_recipe_a_vl_seeded(
+                    decoder,
+                    template,
+                    evaluator,
+                    &options.vl,
+                    &options.seeds,
+                    options.seed_fraction,
+                )?
+            }
         }
     };
     let evaluations = evaluator.evaluations();
@@ -796,6 +813,10 @@ mod tests {
             operator: Some(operator),
             seeds: vec![Genome::from(vec![LayerGene::new(0.25, 0.5, 1.0)])],
             seed_fraction: 0.5,
+            proposal: Some(ProposalConfig {
+                noise_sigma: 0.1,
+                proposals_per_seed: 1,
+            }),
             terminal_insertions: 4,
         }
     }
