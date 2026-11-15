@@ -94,7 +94,7 @@ fn main() {
         &[0.0],
         target.clone(),
         EvaluatorOptions {
-            clamp_min_nm: 5.0,
+            clamp_min_nm: 10.0,
             clamp_max_nm: 300.0,
             ..EvaluatorOptions::default()
         },

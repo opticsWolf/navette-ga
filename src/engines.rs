@@ -497,11 +497,26 @@ fn recipe_a_fitness(
         let Ok(decoded) = decoder.decode(&genome) else {
             return f64::INFINITY;
         };
-        let Ok(stack) = template.assemble(&decoded) else {
+        let Ok(stack) = checked_assemble(&decoder, &template, &decoded) else {
             return f64::INFINITY;
         };
         evaluator.evaluate(&stack).unwrap_or(f64::INFINITY)
     }
+}
+
+/// Assemble a decoded stack and enforce the decoder's A4 contract.
+///
+/// The GA evaluates through this helper so a genotype that decodes but cannot
+/// be represented by the decoder's bounds/grammar is selected against, not
+/// merely rejected at the end of a run.
+fn checked_assemble(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    decoded: &DecodedStack,
+) -> Result<navette::smatrix::synthesis::structure::DesignStack, String> {
+    let stack = template.assemble(decoded)?;
+    decoder.validate_stack(&stack)?;
+    Ok(stack)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -631,7 +646,7 @@ fn cross_island_child(
     let mut child = LayerChromosome::from_dna(dna);
     let genome = child.to_genome();
     let decoded = decoder.decode(&genome).ok()?;
-    let stack = template.assemble(&decoded).ok()?;
+    let stack = checked_assemble(decoder, template, &decoded).ok()?;
     let merit = evaluator.evaluate(&stack).ok()?;
     if !merit.is_finite() {
         return None;
@@ -772,14 +787,25 @@ pub fn run_h0_control(
             Ok(decoded) => decoded,
             Err(_) => continue,
         };
-        let mut stack = match template.assemble(&decoded) {
+        let mut stack = match checked_assemble(decoder, template, &decoded) {
             Ok(stack) => stack,
             Err(_) => continue,
         };
         evaluator.refine(&mut stack)?;
+        // A random start whose LM path leaves the decoder's A4 bounds is a
+        // discarded start, not a reason to abort the whole control arm.
+        if decoder.validate_stack(&stack).is_err() {
+            continue;
+        }
         if let Some(operator) = operator {
             operator.apply(evaluator, &mut stack, cfg.needle_steps)?;
+            if decoder.validate_stack(&stack).is_err() {
+                continue;
+            }
             evaluator.refine(&mut stack)?;
+            if decoder.validate_stack(&stack).is_err() {
+                continue;
+            }
         }
         let merit = evaluator.evaluate(&stack)?;
         if merit.is_finite() && best.as_ref().is_none_or(|(b, ..)| merit < *b) {
@@ -837,10 +863,11 @@ pub fn run_recipe_a_illuminated(
             let Ok(decoded) = decoder.decode(&genome) else {
                 continue;
             };
-            let Ok(stack) = template.assemble(&decoded) else {
+            let Ok(stack) = checked_assemble(decoder, template, &decoded) else {
                 continue;
             };
-            if let Ok(merit) = evaluator.evaluate(&stack) {
+            let merit = chromosome.fitness();
+            if merit.is_finite() {
                 let _ = archive.insert_stack(merit, stack);
             }
         }
@@ -857,7 +884,7 @@ pub fn run_recipe_a_illuminated(
     }
     let best_genome = best.to_genome();
     let decoded = decoder.decode(&best_genome).map_err(|e| e.to_string())?;
-    let stack = template.assemble(&decoded)?;
+    let stack = checked_assemble(decoder, template, &decoded)?;
     let merit = evaluator.evaluate(&stack)?;
     Ok(IlluminatedResult {
         best: RecipeAResult {
@@ -900,7 +927,7 @@ pub fn run_recipe_a(
     let best = ga.run().map_err(|e| e.to_string())?.best_chromosome.clone();
     let best_genome = best.to_genome();
     let decoded = decoder.decode(&best_genome).map_err(|e| e.to_string())?;
-    let stack = template.assemble(&decoded)?;
+    let stack = checked_assemble(decoder, template, &decoded)?;
     let merit = evaluator.evaluate(&stack)?;
 
     Ok(RecipeAResult {
@@ -1034,7 +1061,7 @@ fn run_recipe_a_islands_with_strategies(
 
     let best_genome = best.to_genome();
     let decoded = decoder.decode(&best_genome).map_err(|e| e.to_string())?;
-    let stack = template.assemble(&decoded)?;
+    let stack = checked_assemble(decoder, template, &decoded)?;
     let merit = evaluator.evaluate(&stack)?;
     let island_bests = populations
         .iter()
@@ -1071,6 +1098,7 @@ fn certificate_scan(
     evaluator: &FitnessEvaluator,
     stack: &navette::smatrix::synthesis::structure::DesignStack,
     operator: &MemeticOperator,
+    decoder: &Decoder,
 ) -> Result<(usize, usize), String> {
     let scan = operator.scan(evaluator, stack)?;
     let current = evaluator.evaluate(stack)?;
@@ -1078,6 +1106,11 @@ fn certificate_scan(
     for candidate in &scan.candidates {
         let mut trial = stack.clone();
         trial.insert_needle_candidate(&operator.pool, candidate)?;
+        // A predicted improvement that the decoder cannot represent is not a
+        // certificate candidate: the write-back would clamp or repair it away.
+        if decoder.validate_stack(&trial).is_err() {
+            continue;
+        }
         if evaluator.evaluate(&trial)? < current - 1e-12 {
             actual += 1;
         }
@@ -1108,21 +1141,17 @@ pub fn finish_recipe_a(
     operator: &MemeticOperator,
     max_insertions: usize,
 ) -> Result<(RecipeAResult, TerminalReport), String> {
+    decoder.validate_stack(&result.stack)?;
     let initial_merit = evaluator.evaluate(&result.stack)?;
     evaluator.refine_report(&mut result.stack)?;
+    decoder.validate_stack(&result.stack)?;
     let memetic = operator.apply(evaluator, &mut result.stack, max_insertions)?;
+    decoder.validate_stack(&result.stack)?;
     let (_, lm) = evaluator.refine_report(&mut result.stack)?;
+    decoder.validate_stack(&result.stack)?;
     let lm_converged = lm
         .as_ref()
         .is_none_or(|report| report.termination.is_converged());
-    let (scan_candidates_after, actual_improving_after) =
-        certificate_scan(evaluator, &result.stack, operator)?;
-    if actual_improving_after > 0 {
-        return Err(format!(
-            "terminal scan certificate failed: {actual_improving_after} of              {scan_candidates_after} scanned candidate(s) still improve the merit              after {} insertion(s)",
-            memetic.steps.len()
-        ));
-    }
 
     let width = decoder.max_layers().max(result.best_genome.len());
     let films = result
@@ -1152,7 +1181,18 @@ pub fn finish_recipe_a(
         .encode_films(&films, width)
         .map_err(|error| error.to_string())?;
     let decoded = decoder.decode(&best_genome).map_err(|e| e.to_string())?;
-    let stack = template.assemble(&decoded)?;
+    let stack = checked_assemble(decoder, template, &decoded)?;
+    // Certify the design that will be returned, not the pre-write-back stack:
+    // `encode_films` clamps thicknesses into the decoder bounds and re-decoding
+    // can repair an adjacency.
+    let (scan_candidates_after, actual_improving_after) =
+        certificate_scan(evaluator, &stack, operator, decoder)?;
+    if actual_improving_after > 0 {
+        return Err(format!(
+            "terminal scan certificate failed: {actual_improving_after} of              {scan_candidates_after} scanned candidate(s) still improve the merit              after {} insertion(s)",
+            memetic.steps.len()
+        ));
+    }
     let merit = evaluator.evaluate(&stack)?;
     let min_thickness_nm = stack
         .films()
@@ -1524,7 +1564,7 @@ pub fn run_recipe_a_vl(
     let best = ga.run().map_err(|e| e.to_string())?.best_chromosome.clone();
     let best_genome = best.to_genome();
     let decoded = decoder.decode(&best_genome).map_err(|e| e.to_string())?;
-    let stack = template.assemble(&decoded)?;
+    let stack = checked_assemble(decoder, template, &decoded)?;
     let merit = evaluator.evaluate(&stack)?;
     Ok(RecipeAResult {
         best_genome,
@@ -1623,7 +1663,7 @@ pub fn run_recipe_a_vl_ramp(
     }
     let best_genome = best.to_genome();
     let decoded = decoder.decode(&best_genome).map_err(|e| e.to_string())?;
-    let stack = template.assemble(&decoded)?;
+    let stack = checked_assemble(decoder, template, &decoded)?;
     let merit = evaluator.evaluate(&stack)?;
     Ok(RecipeAResult {
         best_genome,
@@ -1754,7 +1794,7 @@ fn run_recipe_a_vl_islands_with_strategies(
     }
     let best_genome = best.to_genome();
     let decoded = decoder.decode(&best_genome).map_err(|e| e.to_string())?;
-    let stack = template.assemble(&decoded)?;
+    let stack = checked_assemble(decoder, template, &decoded)?;
     let merit = evaluator.evaluate(&stack)?;
     let island_bests = populations
         .iter()
@@ -1933,7 +1973,11 @@ mod tests {
             vec![550.0],
             &[0.0],
             zero_spec(),
-            EvaluatorOptions::default(),
+            EvaluatorOptions {
+                clamp_min_nm: 20.0,
+                clamp_max_nm: 150.0,
+                ..EvaluatorOptions::default()
+            },
         )
         .unwrap();
         let cfg = H0Config {
@@ -2110,7 +2154,7 @@ mod tests {
     #[test]
     fn terminal_finish_writes_back_and_clears_the_scan_certificate() {
         let pool = MaterialPool::new(vec![
-            Material::new("H", 20.0, 200.0).unwrap(),
+            Material::new("H", 10.0, 200.0).unwrap(),
             Material::new("L", 10.0, 150.0).unwrap(),
         ])
         .unwrap();
@@ -2126,7 +2170,11 @@ mod tests {
             vec![550.0],
             &[0.0],
             spec.clone(),
-            EvaluatorOptions::default(),
+            EvaluatorOptions {
+                clamp_min_nm: 10.0,
+                clamp_max_nm: 150.0,
+                ..EvaluatorOptions::default()
+            },
         )
         .unwrap();
         let cfg = RecipeAConfig {
@@ -2157,6 +2205,55 @@ mod tests {
         assert_eq!(report.final_merit, finished.merit);
         assert_eq!(ev.evaluate(&finished.stack).unwrap(), finished.merit);
         assert!(report.min_thickness_nm >= 0.0);
+    }
+
+    #[test]
+    fn terminal_finish_refuses_a_stack_outside_decoder_bounds() {
+        let pool = MaterialPool::new(vec![
+            Material::new("H", 20.0, 200.0).unwrap(),
+            Material::new("L", 10.0, 150.0).unwrap(),
+        ])
+        .unwrap();
+        let decoder = Decoder::without_constraints(pool).unwrap();
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0),
+            constant("substrate", 1.52, 0.0),
+            vec![constant("H", 2.2, 0.0), constant("L", 1.46, 0.0)],
+        )
+        .unwrap();
+        let spec = zero_spec();
+        let evaluator = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            spec.clone(),
+            EvaluatorOptions::default(),
+        )
+        .unwrap();
+        let cfg = RecipeAConfig {
+            population_size: 8,
+            generations: 3,
+            max_layers: 4,
+            mutation_sigma: 0.2,
+            seed: Some(23),
+        };
+        let mut result = run_recipe_a(&decoder, &template, &evaluator, &cfg).unwrap();
+        assert!(!result.stack.films().is_empty());
+        result.stack.set_thickness(0, 400.0).unwrap();
+
+        let spectral = SpectralInputs::from_spec(&spec, &[Radians::ZERO], &[550.0]).unwrap();
+        let operator = MemeticOperator::new(
+            spectral,
+            navette::smatrix::synthesis::cycle::MaterialPool::new(),
+            NeedleCycleConfig {
+                max_needles: 1,
+                scan_step_nm: 10.0,
+                ..NeedleCycleConfig::default()
+            },
+        );
+        let mut ev = evaluator;
+        let error =
+            finish_recipe_a(&decoder, &template, &mut ev, result, &operator, 1).unwrap_err();
+        assert!(error.contains("A4 stack check"), "{error}");
     }
 
     #[test]

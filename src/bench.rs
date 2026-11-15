@@ -68,13 +68,31 @@ impl ComparisonArm {
     pub const fn description(self) -> &'static str {
         match self {
             Self::H0 => "needle-plus-refinement multi-start control",
-            Self::H1 => "single-island Recipe A",
-            Self::H2 => "ring islands under the §2.8.1 policy",
-            Self::H3 => "heterogeneous islands/tribes",
-            Self::H4 => "MOME / MAP-Elites archive illumination",
-            Self::H5 => "moors multi-objective split-off",
-            Self::H6 => "screening past TMM",
-            Self::H7 => "seeded Recipe B proposal arm",
+            Self::H1 => "GA-only single-island recipe",
+            Self::H2 => "phased GA -> needle -> LM (S1)",
+            Self::H3 => "needle-memetic refinement (S2)",
+            Self::H4 => "heterogeneous islands/tribes (S3)",
+            Self::H5 => "QD/MOME archive illumination (S4)",
+            Self::H6 => "surrogate-assisted screening (S7)",
+            Self::H7 => "diffusion/seeded proposal arm (S8)",
+        }
+    }
+
+    /// The strategy item this arm exists to test, or `None` for the control.
+    ///
+    /// This mapping is the E09 v2 §2.7 / PAPER v4 §15 comparison set. Keep it
+    /// next to [`Self::description`] so a code-first rename cannot silently
+    /// re-label a published arm again.
+    pub const fn strategy_item(self) -> Option<&'static str> {
+        match self {
+            Self::H0 => None,
+            Self::H1 => Some("GA-only"),
+            Self::H2 => Some("S1"),
+            Self::H3 => Some("S2"),
+            Self::H4 => Some("S3"),
+            Self::H5 => Some("S4"),
+            Self::H6 => Some("S7"),
+            Self::H7 => Some("S8"),
         }
     }
 }
@@ -301,6 +319,22 @@ mod tests {
             comparison_suite().map(ComparisonArm::label),
             ["H0", "H1", "H2", "H3", "H4", "H5", "H6", "H7"]
         );
+    }
+
+    #[test]
+    fn comparison_arms_follow_the_e09_comparison_set() {
+        assert_eq!(comparison_suite()[0].strategy_item(), None);
+        assert_eq!(
+            comparison_suite()
+                .iter()
+                .skip(1)
+                .map(|arm| arm.strategy_item().unwrap())
+                .collect::<Vec<_>>(),
+            ["GA-only", "S1", "S2", "S3", "S4", "S7", "S8"]
+        );
+        assert!(ComparisonArm::H2.description().contains("phased GA"));
+        assert!(ComparisonArm::H3.description().contains("needle-memetic"));
+        assert!(ComparisonArm::H5.description().contains("MOME"));
     }
 
     #[test]

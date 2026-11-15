@@ -10,10 +10,38 @@ repository, and every limitation is listed rather than inferred away.
 - `navette` local `dev_ga` at `c9e964d` (A1/A3, A2 introspection, public
   joint scan, and the core `ndarray` 0.16 lift).
 - `navette-ga` single crate, LGPL-3.0-or-later.
-- `cargo test --all-features`: **64 passed**.
+- `cargo test --all-features`: **66 passed**.
 - `cargo clippy --all-targets --all-features -- -D warnings`: clean.
 - `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features`: clean.
 - `navette` with `ga-introspect`: **801 passed, 1 ignored**.
+
+## Review follow-up (2026-11-15)
+
+The first review of the Phase 2/3 surface found four integration gaps that the
+unit tests did not catch:
+
+- `Decoder::validate_stack` existed but was not called by the GA, H0, terminal
+  finish, or joint step. It is now called on every assembled design, after
+  every refinement/operator stage, and **after** the terminal write-back.
+  `finish_recipe_a` certifies the returned stack, not the pre-write-back one.
+  A terminal stack outside the decoder bounds is refused; this invalidated the
+  earlier C00 ledger, which used a 5 nm LM clamp below the 10 nm material
+  bound, and the ledger has been regenerated.
+- `joint_needle_step` now stages the whole move on a cloned `SmatrixContext`
+  and design, polishes the trial, evaluates it, and commits only on a strict
+  merit improvement. The interior `split_design` + `insert_seed` path is
+  therefore transactional too. `joint_needle_step_checked` /
+  `run_joint_needle_steps_checked` additionally enforce the decoder A4
+  contract on the trial.
+- The illuminated run now uses the chromosome fitness the GA already computed
+  instead of re-running the solve for every archived member.
+- `bench::ComparisonArm` was re-aligned with E09 §2.7 / PAPER v4 §15:
+  H1 GA-only, H2 phased GA→needle→LM, H3 needle-memetic, H4 heterogeneous
+  islands/tribes, H5 QD/MOME, H6 surrogate screening, H7 seeded proposal.
+  The registry test now pins the strategy-item mapping.
+
+The 40-layer bake, equal-compute H0 comparison, and H6/H7 implementations
+remain open.
 
 ## Phase 2 — joint boundary needles
 
@@ -28,6 +56,9 @@ edges only when the multi-material edge lists contain it.
 - `joint_gap_insert` commits a chosen boundary needle only after every
   environment's template accepts it; a refused locus leaves the design and
   `CompiledEnvironments::gaps()` unchanged.
+- `joint_needle_step` clones the context and design, applies the candidate,
+  polishes, and commits only if the real merit improves; the checked variant
+  also applies the decoder's A4 bounds/grammar to the trial.
 - The public spectral scan is `navette::smatrix::synthesis::cycle::
   joint_needle_scan`, wrapped as `ga::bridge::joint_needle_scan`.
   `joint_needle_step` applies one spectral candidate (interior inserts split
@@ -54,7 +85,8 @@ edges only when the multi-material edge lists contain it.
   column starts at. It returns `None` for specs the analytic path declines
   (colour, joint deposits) rather than silently differencing.
 - The bridge exposes `FitnessEvaluator::merit_parts` and
-  `FitnessEvaluator::thickness_residual_jacobian`. The test verifies the parts
+  `FitnessEvaluator::thickness_residual_jacobian`; the GA and terminal paths
+  validate every assembled stack against the decoder's A4 contract. The test verifies the parts
   sum to the scalar merit and the Jacobian has one column per free film.
   The returned Jacobian is the **residual** matrix plus its shape and film
   rows; `merit_thickness_gradient` composes `2 Jᵀr`. With the core on
@@ -69,16 +101,23 @@ positions. It is not a P(z) adjoint.
 
 `Decoder::validate_stack` resolves every film to a pool material, checks the
 material's thickness bounds, and checks every adjacent pair against the
-decoder grammar. This is the consumer half of A4; navette's native
-per-material bounds and insert/migrate grammar hook remain open because they
-require changing navette's material schema and LM parameter bounds.
+decoder grammar. It is now called by the GA fitness closure, H0, the island
+best path, the illuminated run, the terminal finish (before and after every
+stage, and after write-back), and by the `*_checked` joint-step variants.
+This is the consumer half of A4; navette's native per-material bounds and
+insert/migrate grammar hook remain open because they require changing
+navette's material schema and LM parameter bounds. Enforcing the consumer half
+invalidated the earlier C00 ledger, which had used a 5 nm LM clamp below the
+10 nm decoder floor; see `phase1_c00_ar.md`.
 
 ## Phase 2 — H0 control
 
 `engines::run_h0_control` runs independent random starts, a bounded LM
 refinement, an optional memetic needle step, and a second refinement. It
 returns the same `RecipeAResult` shape as the GA so the comparison harness can
-report it without a second result type.
+report it without a second result type. A start whose LM path leaves the
+decoder's A4 bounds is discarded rather than aborting the arm. Equal-compute
+budgeting is still not implemented.
 
 ## Phase 2 — S4/F1 archive and S6 split
 
@@ -88,7 +127,8 @@ report it without a second result type.
   `GradientDescriptor::from_jacobian` turns an A2 matrix into two normalized
   axes.
 - `engines::run_recipe_a_illuminated` records every legal generation member
-  while the ordinary Recipe A selection runs. This is the S4-lite map, not a
+  while the ordinary Recipe A selection runs, using the fitness the GA already
+  computed rather than re-solving each member. This is the S4-lite map, not a
   QD-driven search.
 - `moors_split::split` maps `(merit, total thickness, layer count)` into
   `moors`' fast non-dominated sort and returns the fronts.

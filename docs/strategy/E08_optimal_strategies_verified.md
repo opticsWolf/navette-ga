@@ -41,7 +41,7 @@ crate claims ("only X does Y") mean "among surveyed crates", not the world.*
   MOME archive and S4-lite illuminated run, the S6 `moors` split, the H0
   control, I1 cross-island multi-parent crossover, the G7 campaign object, and
   the G8 kurobako problem/H0-H7 registry are implemented and tested. Full
-  suite: 64 tests. Navette-native A4, H6/H7 dispatch, and the 40-layer
+  suite: 66 tests. Navette-native A4, H6/H7 dispatch, and the 40-layer
   production bake remain. Details: `docs/studies/phase2_phase3_ledger.md`.
 - **Review status:** 21 findings / 11 gaps / 11 risks (round 1: 19/10/10; round 2 adds
   E15/E16/G11/R11). S1–S10 remain the strategy spine; certification is the C2
@@ -172,7 +172,9 @@ descriptors, LLM operator, archive glue (E06 §12).
 
 ## 6. Open gaps → work list
 
-1. MOME per-bin fronts in `symbios-genetics` (V14) — month-scale, highest leverage.
+1. MOME per-bin fronts: implemented natively in `ga::qd`; the `symbios`
+   fork remains unopened (E10 gate not opened), so upstream offer/PR is still
+   the open follow-up (V14).
 2. Ablate V9 (insertion schedule) vs constant vs N-as-objective; publish under S10.
 3. Re-cite V12 with D04 page numbers; hand-fetch ALPS/TPE/BOHB/MOO primaries (E07 §A).
 4. SAIL glue (`symbios`+`egobox`) the day the evaluator goes full-wave (V15).

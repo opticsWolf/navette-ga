@@ -1,6 +1,6 @@
 # Phase 1 C00-class AR ledger
 
-**Date:** 2026-11-14
+**Date:** 2026-11-15 (A4-enforced rerun of the 2026-11-14 artifact)
 **Command:** `cargo run --release --example phase1_c00_ar`
 **Seed:** `20261114`
 **Engine:** `genetic_algorithms 3.0.0` with its `parallel` feature disabled so
@@ -30,34 +30,47 @@ published numerical optimum.
 
 ```text
 PHASE1_C00_AR
-merit=1209.344267754
-avg_R=0.006592960
-max_R=0.016106028
-layers=16
-insertions=8
+merit=24474.958774584
+avg_R=0.033589064
+max_R=0.042487618
+layers=8
+insertions=20
 lm_converged=true
-min_thickness_nm=10.000000
-scan_candidates_after=56
+min_thickness_nm=19.705781
+scan_candidates_after=67
 actual_improving_after=0
-stack=L:110.070,H:34.870,L:27.428,H:45.576,L:24.395,L:19.879,H:15.983,L:107.396,L:65.207,L:13.241,L:11.541,L:10.000,L:174.970,L:237.085,L:283.371,L:174.927
+stack=L:146.482,L:22.846,L:19.706,L:135.887,L:226.173,L:275.571,L:268.676,L:227.716
 ```
 
 The stack is listed ambient-side first; thicknesses are nm. Average and maximum
-reflectance are fractions (0.00659 = 0.659 %, 0.01611 = 1.611 %).
+reflectance are fractions (0.03359 = 3.359 %, 0.04249 = 4.249 %).
+
+**Superseded result.** An earlier revision of this ledger recorded a 16-layer
+H/L stack at `avg_R = 0.659 %`. That run used an LM clamp of `5 nm`, below the
+decoder's `10 nm` material bound. The terminal stack only appeared to satisfy
+the bound because `encode_films` clamped the written-back thicknesses after the
+scan certificate had been computed. With A4 enforcement the evaluator and the
+decoder now share the same `10 nm` floor, and the old artifact is not a legal
+design. The run above is the replacement recorded under the enforced bound.
 
 ## Certificate
 
 - **LM:** the final `refine_thicknesses_report` terminated by a convergence
   test (`lm_converged = true`).
-- **d_min:** the smallest film is `10.000 nm`, exactly the configured lower
-  bound; the finish did not leave a film below it.
-- **Scan:** the final analytic sweep returned 56 predicted-improving candidates,
+- **d_min:** the smallest film is `19.706 nm`, above the configured `10 nm`
+  floor; the finish did not leave a film below it.
+- **Scan:** the final analytic sweep returned 67 predicted-improving candidates,
   but **trial insertion and real merit evaluation found zero actual
   improvements** (`actual_improving_after = 0`). That is the Phase 1 scan
   certificate: no scanned candidate insertion improves the joint merit.
 - **Write-back:** the terminal stack was encoded into the decoder genome,
   re-decoded, and reassembled; the stored genome, decoded stack, and
-  `DesignStack` agree.
+  `DesignStack` agree. The certificate is now computed **after** this
+  write-back, not before it.
+- **A4:** every stage of the finish validates the decoder's per-material
+  thickness bounds and adjacency grammar. The evaluator clamp is `10–300 nm`,
+  matching the material floor; a stack outside those bounds is refused rather
+  than silently clamped.
 
 ## Reproduction notes
 

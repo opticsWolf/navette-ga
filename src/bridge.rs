@@ -31,7 +31,7 @@ use navette::smatrix::synthesis::staged::{PolishReport, PolishScope};
 use navette::smatrix::synthesis::structure::{ClampReport, DesignStack, EdgeMaterials, LayerSpec};
 use ndarray::{Array2, ArrayView2};
 
-use crate::decoder::{AdjacencyGrammar, DecodedStack, MaterialPool as DecoderPool, Pins};
+use crate::decoder::{AdjacencyGrammar, DecodedStack, Decoder, MaterialPool as DecoderPool, Pins};
 
 /// A2/F2.3: the public spectral joint scan.
 ///
@@ -63,6 +63,35 @@ pub fn joint_needle_step(
     cfg: &NeedleCycleConfig,
     seed_nm: f64,
 ) -> Result<Option<JointNeedleCandidate>, String> {
+    joint_needle_step_inner(ctx, design, spectral, pool, cfg, seed_nm, None)
+}
+
+/// As [`joint_needle_step`], but the trial design must also satisfy the
+/// decoder's A4 bounds and adjacency contract before it is committed.
+///
+/// A candidate that violates the decoder is rejected exactly like a candidate
+/// that fails the trial merit: the caller's design and routing are untouched.
+pub fn joint_needle_step_checked(
+    ctx: &mut SmatrixContext,
+    design: &mut DesignStack,
+    spectral: &SpectralInputs,
+    pool: &MaterialPool,
+    cfg: &NeedleCycleConfig,
+    seed_nm: f64,
+    decoder: &Decoder,
+) -> Result<Option<JointNeedleCandidate>, String> {
+    joint_needle_step_inner(ctx, design, spectral, pool, cfg, seed_nm, Some(decoder))
+}
+
+fn joint_needle_step_inner(
+    ctx: &mut SmatrixContext,
+    design: &mut DesignStack,
+    spectral: &SpectralInputs,
+    pool: &MaterialPool,
+    cfg: &NeedleCycleConfig,
+    seed_nm: f64,
+    decoder: Option<&Decoder>,
+) -> Result<Option<JointNeedleCandidate>, String> {
     if !seed_nm.is_finite() || seed_nm <= 0.0 {
         return Err("joint needle seed thickness must be finite and positive".into());
     }
@@ -70,12 +99,28 @@ pub fn joint_needle_step(
     let Some(candidate) = scan.best else {
         return Ok(None);
     };
+
+    // The spectral candidate is a prediction, not a trial. Stage the whole
+    // move on clones, polish the trial, and commit only after a real merit
+    // evaluation improves. This also makes the interior `split_design` +
+    // `insert_seed` pair transactional: a refusal in a later environment
+    // leaves the caller's design and routing untouched.
+    let before = ctx.evaluate_merit(design)?;
+    let mut trial_ctx = ctx.clone();
+    let mut trial_design = design.clone();
     match candidate.site {
         navette::smatrix::synthesis::cycle::JointSite::Boundary(gap) => {
-            let envs = ctx
+            let envs = trial_ctx
                 .environments_mut()
                 .ok_or_else(|| "joint needle step: the context has no environments".to_string())?;
-            joint_gap_insert(envs, design, pool, gap, candidate.material, seed_nm)?;
+            joint_gap_insert(
+                envs,
+                &mut trial_design,
+                pool,
+                gap,
+                candidate.material,
+                seed_nm,
+            )?;
         }
         navette::smatrix::synthesis::cycle::JointSite::Interior {
             slot,
@@ -94,16 +139,28 @@ pub fn joint_needle_step(
             // Under K > 1 every structural move splits the shared design
             // and every environment's template together. Doing only the
             // design would leave the compiled routing at the old span count.
-            let envs = ctx
+            trial_ctx
                 .environments()
-                .ok_or_else(|| "joint needle step: the context has no environments".to_string())?;
-            envs.split_design(design, slot, depth_into_layer_nm, &film)?;
-            ctx.environments_mut()
+                .ok_or_else(|| "joint needle step: the context has no environments".to_string())?
+                .split_design(&mut trial_design, slot, depth_into_layer_nm, &film)?;
+            trial_ctx
+                .environments_mut()
                 .ok_or_else(|| "joint needle step: the context lost its environments".to_string())?
                 .insert_seed(slot, depth_into_layer_nm, &film)?;
         }
     }
-    design.polish_needles(ctx, PolishScope::All)?;
+    trial_design.polish_needles(&mut trial_ctx, PolishScope::All)?;
+    if let Some(decoder) = decoder {
+        if decoder.validate_stack(&trial_design).is_err() {
+            return Ok(None);
+        }
+    }
+    let after = trial_ctx.evaluate_merit(&trial_design)?;
+    if !after.is_finite() || after >= before {
+        return Ok(None);
+    }
+    *ctx = trial_ctx;
+    *design = trial_design;
     Ok(Some(candidate))
 }
 
@@ -131,13 +188,54 @@ pub fn run_joint_needle_steps(
     seed_nm: f64,
     max_steps: usize,
 ) -> Result<JointRunReport, String> {
+    run_joint_needle_steps_inner(ctx, design, spectral, pool, cfg, seed_nm, max_steps, None)
+}
+
+/// As [`run_joint_needle_steps`], with every accepted step checked against the
+/// decoder's A4 bounds and adjacency contract.
+#[allow(clippy::too_many_arguments)]
+pub fn run_joint_needle_steps_checked(
+    ctx: &mut SmatrixContext,
+    design: &mut DesignStack,
+    spectral: &SpectralInputs,
+    pool: &MaterialPool,
+    cfg: &NeedleCycleConfig,
+    seed_nm: f64,
+    max_steps: usize,
+    decoder: &Decoder,
+) -> Result<JointRunReport, String> {
+    run_joint_needle_steps_inner(
+        ctx,
+        design,
+        spectral,
+        pool,
+        cfg,
+        seed_nm,
+        max_steps,
+        Some(decoder),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_joint_needle_steps_inner(
+    ctx: &mut SmatrixContext,
+    design: &mut DesignStack,
+    spectral: &SpectralInputs,
+    pool: &MaterialPool,
+    cfg: &NeedleCycleConfig,
+    seed_nm: f64,
+    max_steps: usize,
+    decoder: Option<&Decoder>,
+) -> Result<JointRunReport, String> {
     if max_steps == 0 {
         return Err("joint needle run needs max_steps >= 1".into());
     }
     let merit_before = ctx.evaluate_merit(design)?;
     let mut steps = Vec::new();
     for _ in 0..max_steps {
-        let Some(candidate) = joint_needle_step(ctx, design, spectral, pool, cfg, seed_nm)? else {
+        let Some(candidate) =
+            joint_needle_step_inner(ctx, design, spectral, pool, cfg, seed_nm, decoder)?
+        else {
             break;
         };
         steps.push(candidate);
@@ -789,6 +887,19 @@ impl FitnessEvaluator {
         joint_needle_step(&mut self.ctx, design, spectral, pool, cfg, seed_nm)
     }
 
+    /// As [`Self::joint_needle_step`], with the decoder's A4 contract.
+    pub fn joint_needle_step_checked(
+        &mut self,
+        design: &mut DesignStack,
+        spectral: &SpectralInputs,
+        pool: &MaterialPool,
+        cfg: &NeedleCycleConfig,
+        seed_nm: f64,
+        decoder: &Decoder,
+    ) -> Result<Option<JointNeedleCandidate>, String> {
+        joint_needle_step_checked(&mut self.ctx, design, spectral, pool, cfg, seed_nm, decoder)
+    }
+
     /// A2/F2.3: run a bounded spectral joint insertion loop.
     pub fn run_joint_needle_steps(
         &mut self,
@@ -807,6 +918,31 @@ impl FitnessEvaluator {
             cfg,
             seed_nm,
             max_steps,
+        )
+    }
+
+    /// As [`Self::run_joint_needle_steps`], with every accepted step checked
+    /// against the decoder's A4 bounds and adjacency contract.
+    #[allow(clippy::too_many_arguments)]
+    pub fn run_joint_needle_steps_checked(
+        &mut self,
+        design: &mut DesignStack,
+        spectral: &SpectralInputs,
+        pool: &MaterialPool,
+        cfg: &NeedleCycleConfig,
+        seed_nm: f64,
+        max_steps: usize,
+        decoder: &Decoder,
+    ) -> Result<JointRunReport, String> {
+        run_joint_needle_steps_checked(
+            &mut self.ctx,
+            design,
+            spectral,
+            pool,
+            cfg,
+            seed_nm,
+            max_steps,
+            decoder,
         )
     }
 
@@ -1452,6 +1588,12 @@ mod tests {
         assert!(!report.steps.is_empty());
         assert!(report.merit_before.is_finite());
         assert!(report.merit_after.is_finite());
+        assert!(
+            report.merit_after < report.merit_before,
+            "a joint step must be trial-gated: {} -> {}",
+            report.merit_before,
+            report.merit_after
+        );
 
         // One joint macro cycle and one staged joint step must agree after
         // the same initial refinement.

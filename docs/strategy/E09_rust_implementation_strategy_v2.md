@@ -27,15 +27,17 @@ amendments are implemented by the owner, never requested.*
   `cycle::joint_needle_scan` and the A2 merit gradient (`d9faa79`); `c9e964d` lifts the core to `ndarray` 0.16 so navette, `moors`, and `navette-ga` share one array major.
 - **`navette-ga`:** G2 decoder, G1 bridge, A1 memetic operator, fixed and
   variable-length Recipe A, the Phase 2 ring, and the new Phase 2/3 modules
-  (`moors_split`, `qd`, `study`, `bench`). Full suite: **64 tests**.
+  (`moors_split`, `qd`, `study`, `bench`). Full suite: **66 tests**.
 - **Phase 1 exit artifact:** G3 rung-2 material loader; terminal LM + needle
   finish with Lamarckian write-back and actual-trial scan certificate;
-  C00-class ledger at `docs/studies/phase1_c00_ar.md` (16 layers, avg
-  R = 0.659 %, no actually improving scanned candidate).
+  C00-class ledger at `docs/studies/phase1_c00_ar.md` (8 layers, avg
+  R = 3.359 % under the enforced 10 nm decoder bound; no actually improving
+  scanned candidate). The earlier 16-layer/0.659 % run was produced with a
+  5 nm LM clamp and is superseded by the A4-enforced run.
 - **Phase 2 evidence:** spectral joint scan/step/run with two environments
   and H/L/B multi-material edges; one-cycle joint equivalence with
   `run_needle_cycles` (base materials equal, thicknesses < 1e-6 nm); H0
-  control; A2 per-target parts and Jacobian; consumer-side A4 stack check;
+  control; A2 per-target parts and Jacobian; A4 enforcement on every GA/terminal path;
   S4-lite illuminated MOME archive; S6 `moors` split. Details and limits:
   `docs/studies/phase2_phase3_ledger.md`.
 - **Phase 3 evidence:** I1 cross-island multi-parent crossover with
@@ -458,13 +460,16 @@ stands on E00 picks.
   post-A6 campaigns). Exit: fabricated-plausible stack + ledger entry + no
   forbidden needle placement under the rule matrix.
   **Status:** implemented; the ledger is `docs/studies/phase1_c00_ar.md`
-  (16-layer H/L AR, 400–900 nm, avg R = 0.659 %, LM converged, d_min at the
-  configured 10 nm bound, zero actual improving scanned candidates).
+  (8-layer H/L AR, 400–900 nm, avg R = 3.359 %, LM converged, d_min
+  19.7 nm, zero actual improving scanned candidates; the superseded 16-layer
+  run had a 5 nm LM clamp below the decoder bound).
   **Phase 2 status:** the ring/tribes/parsimony paths, spectral joint run,
   joint equivalence, H0 control, A2 introspection, consumer-side A4, S4-lite
   archive, and S6 split are implemented and tested; the 40-layer production
-  filter/merit-vs-depth bake and navette-native A4 remain. See
-  `docs/studies/phase2_phase3_ledger.md`.
+  filter/merit-vs-depth bake and navette-native A4 remain. The follow-up
+  review wired A4 validation into every GA/terminal path, made the spectral
+  joint step trial-gated and transactional, and aligned the comparison-arm
+  registry with §2.7. See `docs/studies/phase2_phase3_ledger.md`.
 - **Phase 2 — Recipe B core (month):** heterogeneous islands/tribes under the
   §2.8.1 island policy (ring, k=10, one best migrant,
   best-replace-worst-if-better with legality repair; the ring driver is

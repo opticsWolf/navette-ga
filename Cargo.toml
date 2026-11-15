@@ -28,10 +28,10 @@ bench = ["dep:kurobako", "dep:kurobako_core", "dep:trackable"]
 # `cargo publish`; when this package is added to Navette as a member, change it
 # to `../navette`.
 #
-# Release gate: the bridge uses navette's A1 staged needle API and A3
-# `evaluate_many`, both on `dev_ga` but not in the published 0.10.0. Bump this
-# requirement once navette ships them; until then `cargo publish` will fail
-# verification by design.
+# Release gate: the bridge uses navette's A1 staged needle API, A2
+# `ga-introspect`, and A3 `evaluate_many`, all on `dev_ga` but not in the
+# published 0.10.0. Bump this requirement once navette ships them; until then
+# `cargo publish` will fail verification by design.
 navette = { version = "0.10.0", path = "../Navette/rust/navette", features = [
     "opt-basin",
     "ga-introspect",

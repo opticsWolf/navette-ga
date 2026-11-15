@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-//! Recipe A/B driver scaffold. The actual campaign wiring lands in Phase 1.
+//! Recipe A/B driver scaffold. The campaign CLI is still a Phase 2/3 follow-up.
 
 fn main() {
     println!(
