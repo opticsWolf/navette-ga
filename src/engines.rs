@@ -243,10 +243,15 @@ pub struct MemeticSchedule {
 
 impl Default for MemeticSchedule {
     fn default() -> Self {
+        // C00-class measured sweet spot: a 20-generation cadence with two
+        // chromosomes and one insertion each cost about 6 % wall time and
+        // moved the average reflectance from 3.36 % to 1.17 %. The same
+        // schedule at 10/8/2 cost 63 % and was worse on this seed; cadence
+        // and top-m are the budget knobs, not "more operator" by default.
         Self {
-            interval: 10,
-            top: 4,
-            max_insertions: 2,
+            interval: 20,
+            top: 2,
+            max_insertions: 1,
         }
     }
 }

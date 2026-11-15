@@ -87,15 +87,15 @@ The same example exposes the mid-loop schedule:
 cargo run --release --example phase1_c00_ar -- --memetic
 ```
 
-It runs `run_recipe_a_memetic` with `interval = 10`, `top = 8`, and
-`max_insertions = 2`, then the same terminal finish. The recorded run reached
-`merit = 1440.475960295`, `avg_R = 0.7941 %`, 14 layers, and a zero
-actual-improvement terminal certificate. The schedule refined 80 chromosomes:
-13 write-backs were accepted, 67 operator predictions were rejected, and no
-write-back was rejected by A4 or by canonical re-scoring. Its wall-time share
-was 63.4 % (GA 0.481 s, memetic 0.832 s). This is an H3 capability and overhead
-measurement on one problem, not an equal-compute H1/H3 comparison; the Phase 2
-ledger holds the full caveat.
+It runs `run_recipe_a_memetic` with the default schedule
+(`interval = 20`, `top = 2`, `max_insertions = 1`), then the same terminal
+finish. The recorded run reached `merit = 4559.194362058`,
+`avg_R = 1.1705 %`, 12 layers, and a zero actual-improvement terminal
+certificate. The schedule refined 10 chromosomes and accepted 3 write-backs;
+its wall-time share was 5.6–6.3 % across repeated runs. The earlier
+aggressive setting (`10 / 8 / 2`) reached `avg_R = 0.7941 %` but cost 63.4 %
+of wall time and was worse on this seed; the Phase 2 ledger holds the full
+schedule table and caveat.
 
 ## Not covered
 

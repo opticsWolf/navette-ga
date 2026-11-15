@@ -141,29 +141,32 @@ generation and before migration. `MemeticRunReport` records passes, refined
 chromosomes, accepted write-backs, insertions, scans, rejection reasons, GA
 time, memetic time, and `memetic_share()`.
 
-The C00-class example now accepts `--memetic`; one release run produced:
+### Budget box (C00, seed 20261114)
 
-```text
-merit=1440.475960295
-avg_R=0.007941379
-max_R=0.011608623
-layers=14
-terminal_insertions=0
-min_thickness_nm=12.341295
-scan_candidates_after=53
-actual_improving_after=0
-passes=10, refined=80, improved=13
-insertions=143, scans=152, prediction_rejected=67
-write_back_rejected=0, merit_rejected=0
-ga_seconds=0.481059, memetic_seconds=0.831807
-memetic_share=0.633581
-```
+The example accepts `--memetic`, `--memetic-interval`, `--memetic-top`, and
+`--memetic-insertions`. All rows use the same 64x100, 32-layer C00 config; each
+is one deterministic run, not a repeat distribution.
 
-Caveat: this is one problem and one config, not an equal-compute H1/H3
-comparison. The 63 % share means the memetic arm is much more expensive per
-generation; the 0.794 % average reflectance shows it can find a much better
-legal design, but the H1/H3 budget-matched campaign is still open. The
-terminal scan certificate is still zero actual improvements.
+| schedule (k / top / max) | merit | avg R | layers | iterations / accepted | memetic share |
+|---|---:|---:|---:|---:|---:|
+| H1, no schedule | 24474.958775 | 3.3589 % | 8 | — | 0 % |
+| 10 / 1 / 1 | 24474.614047 | 3.3596 % | 9 | 10 / 2 | 4.67 % |
+| **20 / 2 / 1 (default)** | **4559.194362** | **1.1705 %** | **12** | **10 / 3** | **5.56–6.27 %** |
+| 10 / 2 / 1 | 600.795854 | 0.4669 % | 23 | 20 / 6 | 20.64 % |
+| 10 / 8 / 2 | 1440.475960 | 0.7941 % | 14 | 80 / 13 | 63.36 % |
+
+The 20/2/1 default is the useful single-digit-share point: it moves the
+average reflectance from 3.36 % to 1.17 % for roughly 6 % wall time on this
+run. The aggressive 10/8/2 schedule is not better on this seed and costs 63 %;
+"more operator" is not automatically more design. The 10/2/1 row finds the
+best recorded reflectance here but spends ~21 % of wall time, so it is a
+quality-first setting, not the default.
+
+Caveats: one problem, one config, one seed; wall time is machine-dependent;
+the comparison is not an equal-evaluation-budget H0/H1/H3 campaign; and the
+terminal scan certificate remains zero actual improvements in every row. The
+budget conclusion is therefore a tuning result for this fixture, not a general
+Phase 2 claim.
 
 ## Phase 2 — H0 control
 

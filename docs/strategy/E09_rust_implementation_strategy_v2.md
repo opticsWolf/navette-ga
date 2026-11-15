@@ -41,7 +41,9 @@ amendments are implemented by the owner, never requested.*
   S4-lite illuminated MOME archive; S6 `moors` split. G4/S2 mid-loop
   needle-as-mutation is wired through `run_recipe_a_memetic` (single island)
   and `run_recipe_a_islands_memetic` (ring), with Lamarckian write-back and a
-  measured wall-time share. Supplied populations now rebind the real fitness
+  measured wall-time share. On C00 the default 20/2/1 schedule costs about
+  6 % wall time and moves avg R from 3.36 % to 1.17 %; the earlier 10/8/2
+  setting cost 63 %. Supplied populations now rebind the real fitness
   function; without that, island/illuminated generations silently kept the
   GA's default zero fitness. Details and limits:
   `docs/studies/phase2_phase3_ledger.md`.

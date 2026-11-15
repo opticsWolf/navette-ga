@@ -125,19 +125,33 @@ fn main() {
 
     // Default mode reproduces the Phase 1 artifact. `--memetic` runs the same
     // config with a mid-loop schedule so its wall-time share can be recorded.
-    let memetic = std::env::args().any(|arg| arg == "--memetic");
+    let args: Vec<String> = std::env::args().collect();
+    let number = |flag: &str, default: usize| -> usize {
+        args.iter()
+            .position(|arg| arg == flag)
+            .and_then(|index| args.get(index + 1))
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(default)
+    };
+    let memetic = args.iter().any(|arg| arg == "--memetic");
     let (result, memetic_report) = if memetic {
+        let defaults = MemeticSchedule::default();
+        let schedule = MemeticSchedule {
+            interval: number("--memetic-interval", defaults.interval),
+            top: number("--memetic-top", defaults.top),
+            max_insertions: number("--memetic-insertions", defaults.max_insertions),
+        };
+        println!(
+            "memetic_schedule={},{},{}",
+            schedule.interval, schedule.top, schedule.max_insertions
+        );
         let run = run_recipe_a_memetic(
             &decoder,
             &template,
             &mut evaluator,
             &cfg,
             &operator,
-            &MemeticSchedule {
-                interval: 10,
-                top: 8,
-                max_insertions: 2,
-            },
+            &schedule,
         )
         .unwrap();
         (run.best, Some(run.report))
