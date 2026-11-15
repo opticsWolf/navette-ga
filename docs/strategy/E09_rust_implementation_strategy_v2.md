@@ -80,10 +80,12 @@ amendments are implemented by the owner, never requested.*
   `bench::family_rank_sum` applies pairwise Mann–Whitney with Holm correction
   over the campaign family. A ten-seed C00 campaign is recorded in the ledger;
   twelve Holm-adjusted pairs survive at 0.05 on that fixture. A two-seed
-  steep-edge filter campaign has H2 and terminal-finished H7 succeeding on both
-  seeds: H2 reaches 39 layers at 0.27 % pass / 99.11 % stop, and H7 grows to
-  56 layers at 0.14 % / 99.72 %. This is a seeded + LM/needle result, not a
-  pure GA discovery; two seeds give no family-level ranking. The H7 diffusion
+  steep-edge filter campaign runs all eight arms; H2 and terminal-finished H7
+  succeed on both seeds. H2 reaches 39 layers at 0.27 % pass / 99.11 % stop,
+  one layer short of the deep screen; H7 grows to 56 layers at 0.14 % / 99.72 %
+  and passes the deep screen (>=40 layers, 10 nm min, R < 2 % / > 99 %). This
+  is a seeded + LM/needle result, not a pure GA discovery; two seeds give no
+  family-level ranking. The H7 diffusion
   proposal and a larger multi-fixture campaign are not implemented.
 - **Release gate:** A1/A3/A2 are not in published navette 0.10.0. The bridge
   is local-path-only until a navette release carries them; `cargo publish` is

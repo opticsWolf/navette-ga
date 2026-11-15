@@ -221,6 +221,8 @@ fn main() {
             ComparisonArm::H1,
             ComparisonArm::H2,
             ComparisonArm::H3,
+            ComparisonArm::H4,
+            ComparisonArm::H5,
             ComparisonArm::H6,
             ComparisonArm::H7,
         ],
@@ -249,16 +251,31 @@ fn main() {
             .map(|(_, r)| *r)
             .collect();
         let avg = |x: &[f64]| x.iter().sum::<f64>() / x.len().max(1) as f64;
+        let pass_avg = avg(&pass);
+        let stop_avg = avg(&stop);
+        let min_nm = best
+            .result
+            .stack
+            .films()
+            .iter()
+            .map(|film| film.d_nm)
+            .reduce(f64::min)
+            .unwrap_or(0.0);
+        let deep_production = best.result.decoded.len() >= 40
+            && min_nm >= 10.0 - 1e-9
+            && pass_avg < 0.02
+            && stop_avg > 0.99;
         println!(
-            "FILTER_CAMPAIGN arm={} best_merit={:.6} median_merit={:.6} median_evals={:.1} \
-             best_layers={} best_pass={:.6} best_stop={:.6}",
+            "FILTER_CAMPAIGN arm={} best_merit={:.6} median_merit={:.6} median_evals={:.1}              best_layers={} best_pass={:.6} best_stop={:.6} best_min_nm={:.6}              deep_production={}",
             entry.arm.label(),
             entry.best_merit().unwrap(),
             entry.median_merit().unwrap(),
             entry.median_evaluations().unwrap(),
             best.result.decoded.len(),
-            avg(&pass),
-            avg(&stop)
+            pass_avg,
+            stop_avg,
+            min_nm,
+            deep_production
         );
     }
     let ert = expected_running_time(&campaign, 30_000.0).unwrap();
