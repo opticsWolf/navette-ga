@@ -87,16 +87,20 @@ amendments are implemented by the owner, never requested.*
   deep screen (>=40 layers, 10 nm min, R < 2 % / > 99 %). H2 is GA-initialized
   rather than seeded, but both still use terminal needle/LM refinement. The
   28-pair family has 24 Holm-significant pairs; only H1–H4, H1–H5, H1–H6, and
-  H2–H7 fail to separate. The H7 diffusion proposal and a larger
-  multi-fixture campaign are not implemented.
+  H2–H7 fail to separate. A third short-pass fixture gives H2 35 layers at
+  0.0772 % / 99.8788 % and H7 38 layers at 0.0236 % / 99.9365 %; both succeed
+  on 7/7 target runs but fail the 40-layer deep screen. This negative
+  depth-transfer result shows that the 40-layer depth is target-specific. The
+  short-pass family has 23 significant pairs; H0–H3, H1–H4, H1–H5, H2–H7, and
+  H4–H5 do not separate. The H7 diffusion proposal is not implemented.
 - **Release gate:** A1/A3/A2 are not in published navette 0.10.0. The bridge
   is local-path-only until a navette release carries them; `cargo publish` is
   expected to fail verification meanwhile.
 - **Remaining:** an optional nalgebra `DMatrix` adapter (not required),
   navette-native A4 (per-material bounds and insert/migrate grammar hook), the
-  H7 diffusion proposal, a larger multi-fixture H0–H7 campaign, and the
-  multi-seed equal-compute H0/H1/H3 campaign; the released-navette gate
-  remains. A needle-grown 40-layer filter, a GA-initialized 43-layer H2 deep
+  H7 diffusion proposal and the multi-seed equal-compute H0/H1/H3 campaign;
+  the released-navette gate remains. C00, long-pass, and short-pass H0–H7
+  campaigns are recorded. A needle-grown 40-layer filter, a GA-initialized 43-layer H2 deep
   filter, the seeded 40-layer artifact, and the filter depth bake exist.
 
 ## 0. What navette already is (and why the strategy collapses around it)

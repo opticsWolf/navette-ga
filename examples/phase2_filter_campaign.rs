@@ -2,8 +2,10 @@
 //! H0–H7 comparison campaign on the steep-edge filter.
 //!
 //! A chirped H/L quarter-wave stack gives a long-pass edge; the target rewards
-//! low reflectance below 500 nm and high reflectance above 600 nm. This is the
-//! starting point for the Recipe B filter run, not a claimed optimum yet.
+//! low reflectance below 500 nm and high reflectance above 600 nm. Pass
+//! `--fixture shortpass` with the same stack to reverse the bands and the
+//! chirp. This is the starting point for the Recipe B filter run, not a
+//! claimed optimum yet.
 
 use std::collections::BTreeMap;
 
@@ -115,6 +117,17 @@ fn genome_from_stack(decoder: &Decoder, stack: &DesignStack) -> Genome {
 fn main() {
     let args = std::env::args().collect::<Vec<_>>();
     let seed_count = number(&args, "--seeds", 7).clamp(1, 20);
+    let fixture = args
+        .iter()
+        .position(|arg| arg == "--fixture")
+        .and_then(|index| args.get(index + 1))
+        .map(String::as_str)
+        .unwrap_or("longpass");
+    let shortpass = match fixture {
+        "longpass" => false,
+        "shortpass" => true,
+        other => panic!("unknown fixture {other:?}; use longpass or shortpass"),
+    };
     let wavelengths: Vec<f64> = (400..=900).step_by(5).map(f64::from).collect();
     let library = vec![
         table("H", 2.30, &wavelengths),
@@ -134,7 +147,12 @@ fn main() {
     let ambient = LayerSpec::constant("air", 1.0, 0.0, 0.0, wavelengths.len());
     let substrate = LayerSpec::constant("substrate", 1.52, 0.0, 0.0, wavelengths.len());
     let template = stack_template(ambient.clone(), substrate.clone(), &loaded).unwrap();
-    let spec = target(&[(400.0, 500.0, 0.0), (600.0, 900.0, 1.0)], &wavelengths);
+    let profile = if shortpass {
+        [(400.0, 500.0, 1.0), (600.0, 900.0, 0.0)]
+    } else {
+        [(400.0, 500.0, 0.0), (600.0, 900.0, 1.0)]
+    };
+    let spec = target(&profile, &wavelengths);
     let mut evaluator = FitnessEvaluator::new(
         wavelengths.clone(),
         &[0.0],
@@ -165,7 +183,8 @@ fn main() {
 
     let mut films = Vec::new();
     for index in 0..20 {
-        let centre = 450.0 + index as f64 * 10.0;
+        let position = if shortpass { 19 - index } else { index };
+        let centre = 450.0 + position as f64 * 10.0;
         let mut h = LayerSpec::constant("H", 2.30, 0.0, centre / (4.0 * 2.30), wavelengths.len());
         h.label = Some("H".into());
         let mut l = LayerSpec::constant("L", 1.45, 0.0, centre / (4.0 * 1.45), wavelengths.len());
@@ -250,16 +269,21 @@ fn main() {
             .unwrap();
         let sim = evaluator.simulate(&best.result.stack).unwrap();
         let curve = sim.curve(CurveId::Rs).unwrap();
+        let (pass_lo, pass_hi, stop_lo, stop_hi) = if shortpass {
+            (600.0, 900.0, 400.0, 500.0)
+        } else {
+            (400.0, 500.0, 600.0, 900.0)
+        };
         let pass: Vec<f64> = wavelengths
             .iter()
             .zip(curve.iter())
-            .filter(|(w, _)| **w <= 500.0)
+            .filter(|(w, _)| **w >= pass_lo && **w <= pass_hi)
             .map(|(_, r)| *r)
             .collect();
         let stop: Vec<f64> = wavelengths
             .iter()
             .zip(curve.iter())
-            .filter(|(w, _)| **w >= 600.0)
+            .filter(|(w, _)| **w >= stop_lo && **w <= stop_hi)
             .map(|(_, r)| *r)
             .collect();
         let avg = |x: &[f64]| x.iter().sum::<f64>() / x.len().max(1) as f64;
@@ -278,7 +302,8 @@ fn main() {
             && pass_avg < 0.02
             && stop_avg > 0.99;
         println!(
-            "FILTER_CAMPAIGN arm={} best_merit={:.6} median_merit={:.6} median_evals={:.1}              best_layers={} best_pass={:.6} best_stop={:.6} best_min_nm={:.6}              deep_production={}",
+            "FILTER_CAMPAIGN fixture={} arm={} best_merit={:.6} median_merit={:.6} median_evals={:.1}              best_layers={} best_pass={:.6} best_stop={:.6} best_min_nm={:.6}              deep_production={}",
+            fixture,
             entry.arm.label(),
             entry.best_merit().unwrap(),
             entry.median_merit().unwrap(),

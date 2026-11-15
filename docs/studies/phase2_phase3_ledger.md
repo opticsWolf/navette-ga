@@ -376,6 +376,36 @@ canonical write-back silently swapped materials. The example now uses
 decoder/template order mismatch before any solve. The write-back itself now
 preserves merit once the orders match.
 
+## Phase 3 — short-pass cross-fixture check
+
+`examples/phase2_filter_campaign.rs --fixture shortpass --seeds 7` reverses the
+target bands (reflect 400–500 nm, transmit 600–900 nm) and the chirp direction
+on the same H/L stack. This is the third H0–H7 fixture after C00 and the
+long-pass filter.
+
+| arm | best merit | median merit | median evals | best layers | best pass R | best stop R | min nm | deep screen |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| H0 | 650,958.663020 | 1,459,925.310469 | 6,337 | 19 | 4.5360 % | 87.6926 % | 24.67 | no |
+| H1 | 8,438,421.073946 | 9,014,780.497611 | 157 | 13 | 25.0540 % | 62.2540 % | 17.38 | no |
+| H2 | **84.396742** | 260.588053 | 2,350 | 35 | **0.0772 %** | **99.8788 %** | 10.00 | no (35) |
+| H3 | 357,586.787042 | 960,874.974527 | 181 | 22 | 4.7475 % | 92.7053 % | 22.38 | no |
+| H4 | 7,039,822.687748 | 9,300,080.542951 | 313 | 15 | 17.8804 % | 60.5931 % | 19.43 | no |
+| H5 | 7,608,373.447648 | 10,814,526.927411 | 157 | 19 | 16.9110 % | 55.7263 % | 13.66 | no |
+| H6 | 12,001,648.098375 | 13,905,450.608606 | 52 | 17 | 7.6749 % | 30.2267 % | 31.34 | no |
+| H7 | **14.382368** | **1,773.529240** | 4,108 | 38 | **0.0236 %** | **99.9365 %** | 10.00 | no (38) |
+
+H2 and H7 both succeed on 7/7 target runs: H2 ERT `2,549.4`, H7 ERT
+`3,409.6`; every other arm is `none`. Their optical quality is excellent
+(0.077 % / 0.024 % pass, 99.88 % / 99.94 % stop), but neither reaches the
+40-layer deep-screen threshold. This is a **negative depth-transfer result**:
+the long-pass 43–47-layer optimum does not carry over to the short-pass
+fixture, so the 40-layer depth is target-specific rather than a universal
+Recipe B requirement.
+
+The 28-pair family has 23 significant pairs. The five exceptions are H0–H3
+(`0.6976`), H1–H4 (`1.0000`), H1–H5 (`0.9528`), H2–H7 (`1.0000`), and
+H4–H5 (`0.8345`). H2 and H7 are again not separable from each other.
+
 ## Phase 3 — H0–H7 dispatch and campaign loop
 
 `bench::run_comparison_arm` now dispatches the registry to the engine that
