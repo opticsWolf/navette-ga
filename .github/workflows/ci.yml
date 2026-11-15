@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out navette-ga
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: navette-ga
 
@@ -19,7 +19,7 @@ jobs:
       # pre-release window. Keep both checkouts as siblings so Cargo.toml's
       # ../Navette/rust/navette path resolves exactly as it does locally.
       - name: Check out navette dev branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: opticsWolf/Navette
           ref: dev_ga
