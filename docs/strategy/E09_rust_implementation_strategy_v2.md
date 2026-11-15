@@ -56,13 +56,13 @@ amendments are implemented by the owner, never requested.*
   this is a seeded filter artifact, not a GA discovery. The filter
   merit-vs-depth bake at 10/20/30/40/50 layers shows a real depth signal
   (passband 4.55 % -> 0.45 %, stopband 75.4 % -> 99.95 %) but 40 layers is
-  not monotonic (30 layers refined better at the same cap). A needle-grown
-  path from 10 layers stops at 18 layers (1.67 % pass / 94.06 % stop) and a
-  20-layer start reaches 30 layers (0.16 % / 99.08 %); a 30-layer start is
-  already at that local optimum (0.68 % / 99.53 %). None reaches the 40-layer
-  production count, and the 30-layer result is not a GA-discovered
-  architecture. The growth run exposed a navette x0-floor bug, fixed on
-  `dev_ga` at `5adb40c`. The H6 linear
+  not monotonic (30 layers refined better at the same cap). Needle growth
+  now crosses the 40-layer production count: a 32-layer start reaches 42
+  layers, a 36-layer start reaches 44, and the default 18-pair / 2-insertion
+  run reaches exactly 40 layers at 0.026 % pass / 99.916 % stop and passes
+  production. The crossing is non-monotonic (a 34-layer start stalls at 38),
+  and it is still seed-initialized, not a GA-discovered architecture. The
+  growth run exposed a navette x0-floor bug, fixed on `dev_ga` at `5adb40c`. The H6 linear
   surrogate used 247 total true evaluations but lost to a 125-GA-budget H1
   control on quality (3.34 % vs 2.67 %); screening is for expensive-evaluation
   regimes, not a cheap-TMM win. The H7 seed-bank fallback is recorded. This is
@@ -92,8 +92,9 @@ amendments are implemented by the owner, never requested.*
   expected to fail verification meanwhile.
 - **Remaining:** an optional nalgebra `DMatrix` adapter (not required),
   navette-native A4 (per-material bounds and insert/migrate grammar hook), the
-  H7 diffusion proposal, a GA-discovered Recipe B filter (the seeded 40-layer
-  artifact and the filter depth bake exist), and the multi-seed equal-compute
+  H7 diffusion proposal, a GA-discovered Recipe B filter (a needle-grown
+  40-layer filter, the seeded 40-layer artifact, and the filter depth bake
+  exist), and the multi-seed equal-compute
   H0/H1/H3 campaign; the released-navette gate remains.
 
 ## 0. What navette already is (and why the strategy collapses around it)

@@ -275,23 +275,49 @@ R(450)=0.000002  R(500)=0.058757  R(550)=0.662993
 R(600)=0.895544  R(700)=0.964255
 ```
 
-The operator accepts only individually improving insertions, and it stops
-after four because the next scan has no improving candidate. Growth from 20
-layers (`--pairs 10`) accepts five insertions and reaches 30 layers; a
-30-layer seed (`--pairs 15`) accepts none, because it is already at the same
-local optimum. The 30-layer results meet the passband/stopband screen but fail
-the 40-layer production count:
+The operator accepts only individually improving insertions. With the
+transactional post-polish acceptance, growth is non-monotonic in seed depth:
 
-| seed pairs | start layers | accepted | final layers | merit | pass avg R | stop avg R |
-|---:|---:|---:|---:|---:|---:|---:|
-| 5 | 10 | 4 | 18 | 254,930.958714 | 1.6721 % | 94.0613 % |
-| 10 | 20 | 5 | 30 | 6,561.660031 | 0.1641 % | 99.0789 % |
-| 15 | 30 | 0 | 30 | 2,877.608791 | 0.6752 % | 99.5303 % |
+| seed pairs | start layers | accepted (30 cap) | final layers | merit | pass avg R | stop avg R | production |
+|---:|---:|---:|---:|---:|---:|---:|---|
+| 5 | 10 | 3 | 16 | 233,321.391201 | 1.7657 % | 94.3269 % | fail |
+| 10 | 20 | 6 | 32 | 6,537.839811 | 0.1815 % | 99.0804 % | fail |
+| 12 | 24 | 5 | 34 | 2,786.433973 | 0.1558 % | 99.4401 % | fail |
+| 14 | 28 | 5 | 38 | 1,156.308727 | 0.1261 % | 99.6113 % | fail |
+| 15 | 30 | 4 | 38 | 1,156.306762 | 0.1262 % | 99.6113 % | fail |
+| 16 | 32 | 5 | 42 | 445.046595 | 0.0732 % | 99.7654 % | pass |
+| 17 | 34 | 2 | 38 | 296.912897 | 0.0529 % | 99.8548 % | fail |
+| 18 | 36 | 4 | 44 | 59.540343 | 0.0303 % | 99.9161 % | pass |
+| 19 | 38 | 2 | 42 | 20.521238 | 0.0168 % | 99.9522 % | pass |
+| 20 | 40 | 8 | 56 | 34.181808 | 0.0194 % | 99.9632 % | pass |
 
-The 30-layer seed is the best of these local optima and shows that a
-production-worthy edge does not require 40 layers on this target. It is still
-not a GA-discovered architecture, and the 40-layer seeded artifact remains the
-only 40-layer production result.
+The earlier 30-layer “local optimum” result is superseded: with transactional
+acceptance a 30-layer start now accepts four insertions and reaches 38 layers.
+Growth crosses the 40-layer production count from a 32-layer start (42 layers)
+and from a 36-layer start (44 layers); the 34-layer start stalls at 38, so the
+crossing is not monotonic.
+
+The default growth run is now `--pairs 18 --insertions 2`:
+
+```text
+seed layers        36
+insertions          2
+final layers       40
+merit               60.066004
+passband avg R      0.0259 %
+stopband avg R     99.9156 %
+min thickness      10.000 nm
+production          pass
+R(450)=0.000287  R(500)=0.000522  R(550)=0.177778
+R(600)=0.998308  R(700)=0.998731
+```
+
+This is a 40-layer production filter reached by needle growth from a 36-layer
+chirped seed. It is still seed-initialized, not a GA-discovered architecture,
+but it closes the “40-layer reached by growth” gap; the seeded 40-layer + LM
+artifact remains the record for the exact seeded construction. `lm_converged`
+is false at the 3,000-iteration cap, so this is a feasible artifact rather than
+a converged optimum.
 
 The run also exposed a navette start-point bug: an inserted film below the
 10 nm floor was passed to LM as x0, and `ClampUpAlways` rejected it before the
@@ -568,8 +594,9 @@ target; the significant pairs are a within-fixture result, not a universal
 ranking; the kurobako registration is a problem definition; the archive illumination is not
 selection;
 the C00 depth bake is a negative scale signal; the filter depth bake is one
-target and a 5k LM cap; the 40-layer filter is a seeded stack plus LM, and
-the needle-grown path saturates at 18 layers, not a GA discovery; the equal-budget H0/H1 result is five seeds on one target; the
+target and a 5k LM cap; the seeded 40-layer filter is a stack plus LM, and
+the needle-grown 40-layer result is seed-initialized, not a GA discovery; the
+equal-budget H0/H1 result is five seeds on one target; the
 H7 arm is a mined-seed fallback, not a diffusion implementation; H6 is a
 linear screen, not a GP; navette-native A4 and the released-navette gate
 remain open. The core `ndarray` lift (`c9e964d`) resolves the earlier

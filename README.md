@@ -22,10 +22,11 @@ screen (`--surrogate`), or the H7 mined-seed fallback (`--seeded`); the first
 C00 comparison puts H1 ahead on all five seeds at 2k and 20k evaluations, and
 the H6 screen is cheaper but not better at equal true budget on this cheap-TMM
 fixture. The forty-layer seeded filter artifact is
-`examples/phase2_filter_40.rs`; `examples/phase2_filter_depth.rs` is the
-merit-versus-depth bake. `examples/phase2_campaign.rs` runs the H0–H7
-dispatcher over three fixed seeds and prints ERT plus Holm-adjusted pairwise
-rank sums.
+`examples/phase2_filter_40.rs`; `examples/phase2_filter_growth.rs` now grows a
+36-layer seed to a 40-layer production filter by default. The
+`examples/phase2_filter_depth.rs` bake is the merit-versus-depth sweep.
+`examples/phase2_campaign.rs` runs the H0–H7 dispatcher over ten fixed seeds
+and prints ERT plus Holm-adjusted pairwise rank sums.
 
 The boundary path now covers read-only joint gap acceptance, structural
 candidate enumeration, transactional chosen-locus insertion, the spectral
@@ -44,8 +45,9 @@ the H7 mined-seed fallback and optional proposal expansion. Full suite:
 
 Limits are explicit: navette-native A4 (per-material bounds and the
 insert/migrate grammar hook), the H7 diffusion proposal, a GA-discovered
-Recipe B filter (the seeded 40-layer artifact and depth bake exist), and the
-full multi-seed H0–H7 campaign remain; a ten-seed C00 campaign is recorded in the ledger.
+Recipe B filter (a needle-grown 40-layer filter, the seeded 40-layer artifact,
+and the depth bake exist), and the larger multi-fixture H0–H7 campaign remain;
+a ten-seed C00 campaign is recorded in the ledger.
 The mid-loop schedule has one C00 overhead measurement, not a controlled arm
 result. Consumer-side A4 is now
 enforced on every GA/terminal/joint path; the earlier C00 ledger was
@@ -82,7 +84,7 @@ examples/
   phase2_depth_bake.rs     # C00 depth/MOME bake with production screen
   phase2_filter_40.rs      # forty-layer seeded H/L edge-filter artifact
   phase2_filter_depth.rs   # 10/20/30/40/50-layer filter depth bake
-  phase2_filter_growth.rs  # needle-grown filter probe (10/20/30-layer starts)
+  phase2_filter_growth.rs  # needle-grown filter probe (default 40-layer run; --pairs sweep)
   phase2_campaign.rs       # H0-H7 campaign + ERT + Holm (bench feature)
   phase2_filter_campaign.rs # filter-fixture H0-H7 check (bench feature)
 docs/

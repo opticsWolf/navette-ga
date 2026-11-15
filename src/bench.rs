@@ -709,9 +709,19 @@ mod tests {
             vec![constant("H", 2.2), constant("L", 1.46)],
         )
         .unwrap();
-        let evaluator =
-            FitnessEvaluator::new(vec![550.0], &[0.0], spec(), EvaluatorOptions::default())
-                .unwrap();
+        // Keep the evaluator's LM clamp inside the decoder's material bounds;
+        // otherwise a terminal LM can return a thickness the A4 check rejects.
+        let evaluator = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            spec(),
+            EvaluatorOptions {
+                clamp_min_nm: 10.0,
+                clamp_max_nm: 200.0,
+                ..EvaluatorOptions::default()
+            },
+        )
+        .unwrap();
         ReflectanceProblem::new(
             decoder,
             template,

@@ -3,9 +3,11 @@
 //!
 //! A chirped H/L quarter-wave stack gives a long-pass edge; the target rewards
 //! low reflectance below 500 nm and high reflectance above 600 nm. The seed is
-//! `--pairs` H/L pairs (default 5), and the operator runs for up to
-//! `--insertions` improving needle steps (default 30). This is a growth probe,
-//! not a claimed optimum.
+//! `--pairs` H/L pairs (default 18, i.e. 36 layers), and the operator runs for
+//! up to `--insertions` improving needle steps (default 2). The default run
+//! grows the seed to 40 layers and passes the production screen. Use
+//! `--insertions 30` to let growth saturate, or `--pairs` to sweep the seed
+//! depth. This is a growth probe, not a claimed optimum.
 
 use std::collections::BTreeMap;
 
@@ -87,8 +89,8 @@ fn number(args: &[String], flag: &str, default: usize) -> usize {
 
 fn main() {
     let args = std::env::args().collect::<Vec<_>>();
-    let pairs = number(&args, "--pairs", 5);
-    let max_insertions = number(&args, "--insertions", 30);
+    let pairs = number(&args, "--pairs", 18);
+    let max_insertions = number(&args, "--insertions", 2);
     let wavelengths: Vec<f64> = (400..=900).step_by(5).map(f64::from).collect();
     let library = vec![
         table("H", 2.30, &wavelengths),
