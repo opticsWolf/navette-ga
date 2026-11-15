@@ -25,6 +25,7 @@ use crate::engines::{
     RecipeAResult, SurrogateConfig, TribeConstraint, VlRecipeAConfig,
 };
 use crate::qd::ArchiveConfig;
+use crate::study::{holm_bonferroni, mann_whitney_u, RankSumReport};
 
 /// The eight comparison arms from E09 v2 §2.7 / §5.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -451,6 +452,63 @@ impl CampaignArm {
     }
 }
 
+/// One pairwise rank-sum comparison inside a campaign family.
+#[derive(Clone, Debug)]
+pub struct ArmComparison {
+    pub first: ComparisonArm,
+    pub second: ComparisonArm,
+    pub report: RankSumReport,
+    /// Holm–Bonferroni adjustment over the whole family of pairs.
+    pub adjusted_p: f64,
+}
+
+/// Pairwise Mann–Whitney comparisons with a Holm adjustment over all pairs.
+///
+/// The family is every unordered pair of arms in `campaign`, so `m =
+/// k*(k-1)/2`. The underlying rank-sum test uses the exact permutation
+/// distribution only for small tie-free samples and the tie-corrected normal
+/// approximation otherwise; the returned report says which was used.
+pub fn family_rank_sum(campaign: &[CampaignArm]) -> Result<Vec<ArmComparison>, String> {
+    if campaign.len() < 2 {
+        return Err("family rank-sum needs at least two arms".into());
+    }
+    let mut pairs = Vec::new();
+    for first in 0..campaign.len() {
+        for second in (first + 1)..campaign.len() {
+            let a = campaign[first]
+                .runs
+                .iter()
+                .map(|run| run.result.merit)
+                .collect::<Vec<_>>();
+            let b = campaign[second]
+                .runs
+                .iter()
+                .map(|run| run.result.merit)
+                .collect::<Vec<_>>();
+            pairs.push((
+                campaign[first].arm,
+                campaign[second].arm,
+                mann_whitney_u(&a, &b)?,
+            ));
+        }
+    }
+    let p_values = pairs
+        .iter()
+        .map(|(_, _, report)| report.p_value)
+        .collect::<Vec<_>>();
+    let adjusted = holm_bonferroni(&p_values)?;
+    Ok(pairs
+        .into_iter()
+        .zip(adjusted)
+        .map(|((first, second, report), adjusted_p)| ArmComparison {
+            first,
+            second,
+            report,
+            adjusted_p,
+        })
+        .collect())
+}
+
 /// Fixed-target expected-running-time summary for one arm.
 ///
 /// `ert` is the censored estimate `sum(evaluations over all runs) / successes`:
@@ -855,5 +913,30 @@ mod tests {
         }
 
         assert!(expected_running_time(&campaign, f64::NAN).is_err());
+    }
+
+    #[test]
+    fn family_rank_sum_adjusts_every_pair() {
+        let problem = problem();
+        let mut evaluator = problem.evaluator.clone();
+        let options = comparison_options(&problem);
+        let campaign = run_comparison_campaign(
+            &problem.decoder,
+            &problem.template,
+            &mut evaluator,
+            &[ComparisonArm::H0, ComparisonArm::H1, ComparisonArm::H6],
+            &[101, 202],
+            &options,
+        )
+        .unwrap();
+        let family = family_rank_sum(&campaign).unwrap();
+        assert_eq!(family.len(), 3);
+        for pair in &family {
+            assert_eq!(pair.report.n_a, 2);
+            assert_eq!(pair.report.n_b, 2);
+            assert!((0.0..=1.0).contains(&pair.adjusted_p));
+            assert!(pair.adjusted_p >= pair.report.p_value);
+        }
+        assert!(family_rank_sum(&campaign[..1]).is_err());
     }
 }

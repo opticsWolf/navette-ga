@@ -10,7 +10,7 @@ repository, and every limitation is listed rather than inferred away.
 - `navette` local `dev_ga` at `c9e964d` (A1/A3, A2 introspection, public
   joint scan, and the core `ndarray` 0.16 lift).
 - `navette-ga` single crate, LGPL-3.0-or-later.
-- `cargo test --all-features`: **80 passed**.
+- `cargo test --all-features`: **81 passed**.
 - `cargo clippy --all-targets --all-features -- -D warnings`: clean.
 - `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features`: clean.
 - `navette` with `ga-introspect`: **801 passed, 1 ignored**.
@@ -283,10 +283,12 @@ best/median merit and median evaluations. `bench::expected_running_time`
 turns that campaign into a fixed-target ERT table: a run succeeds when its
 final merit is `<= target_merit`, and `ert = sum(evaluations over all runs) /
 successes` censors unsuccessful runs at their observed length. Arms with no
-success report `None`. This is still not a family multiplicity correction;
-the dispatch test runs all eight arms on the small fixture, the campaign test
-runs H0/H1/H6 over two seeds, and the ERT test checks the all-success and
-no-success cases.
+success report `None`. `bench::family_rank_sum` then runs every pairwise
+Mann–Whitney comparison in the campaign and applies Holm–Bonferroni over the
+whole set of pairs. The dispatch test runs all eight arms on the small
+fixture, the campaign test runs H0/H1/H6 over two seeds, the ERT test checks
+the all-success and no-success cases, and the family test checks the Holm
+adjustment. These are infrastructure tests, not a scientific H0–H7 campaign.
 
 ## Phase 2 — H0 control
 
@@ -425,8 +427,9 @@ problem uses the same decoder/template/evaluator as the GA, so a solver is
 measured on the same physics.
 
 Limitations: the kurobako registration is a problem definition, and the
-dispatcher/campaign loop has a fixed-target ERT but no family multiplicity
-correction; the archive illumination is not selection;
+dispatcher/campaign loop has fixed-target ERT plus pairwise Holm, but no
+scientific H0–H7 campaign has been run; the archive illumination is not
+selection;
 the C00 depth bake is a negative scale signal; the filter depth bake is one
 target and a 5k LM cap; the 40-layer filter is a seeded stack plus LM, not a
 GA discovery; the equal-budget H0/H1 result is five seeds on one target; the

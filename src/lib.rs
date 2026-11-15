@@ -38,4 +38,4 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The current implementation phase.
 pub const STATUS: &str =
-    "Phase 2 implementation + Phase 3 modules: joint/spectral needles, A2 introspection, A4 enforcement, mid-loop S2, H6 linear surrogate, H7 seed fallback, H0-H7 dispatcher/campaign/ERT, MOME, I1, study, kurobako; Phase 2 evidence (GA-discovered 40-layer filter, H7 diffusion, family multiplicity) open";
+    "Phase 2 implementation + Phase 3 modules: joint/spectral needles, A2 introspection, A4 enforcement, mid-loop S2, H6 linear surrogate, H7 seed fallback, H0-H7 dispatcher/campaign/ERT/family-Holm, MOME, I1, study, kurobako; Phase 2 evidence (GA-discovered 40-layer filter, H7 diffusion, scientific campaign) open";

@@ -36,13 +36,13 @@ archive and illuminated Recipe A run, the S6 `moors` split, the H0 control,
 I1 cross-island multi-parent crossover, the G7 campaign queue/pins/pruner,
 the G8 kurobako problem/H0–H7 registry and dispatcher, the G4/S2 mid-loop
 needle schedule for single-island and ring runs, the H6 linear surrogate, and
-the H7 mined-seed fallback. Full suite: **80 tests**;
+the H7 mined-seed fallback. Full suite: **81 tests**;
 `--all-features` includes the kurobako proof module.
 
 Limits are explicit: navette-native A4 (per-material bounds and the
 insert/migrate grammar hook), the H7 diffusion proposal, a GA-discovered
 Recipe B filter (the seeded 40-layer artifact and depth bake exist), and the
-multi-seed H0/H1/H3 campaign with family multiplicity correction remain.
+multi-seed H0/H1/H3 campaign remain.
 The mid-loop schedule has one C00 overhead measurement, not a controlled arm
 result. Consumer-side A4 is now
 enforced on every GA/terminal/joint path; the earlier C00 ledger was
