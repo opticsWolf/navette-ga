@@ -114,7 +114,7 @@ fn genome_from_stack(decoder: &Decoder, stack: &DesignStack) -> Genome {
 
 fn main() {
     let args = std::env::args().collect::<Vec<_>>();
-    let seed_count = number(&args, "--seeds", 5).clamp(1, 20);
+    let seed_count = number(&args, "--seeds", 7).clamp(1, 20);
     let wavelengths: Vec<f64> = (400..=900).step_by(5).map(f64::from).collect();
     let library = vec![
         table("H", 2.30, &wavelengths),

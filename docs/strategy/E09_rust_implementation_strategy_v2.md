@@ -79,17 +79,16 @@ amendments are implemented by the owner, never requested.*
   `bench::expected_running_time` adds a fixed-target censored ERT report, and
   `bench::family_rank_sum` applies pairwise Mann–Whitney with Holm correction
   over the campaign family. A ten-seed C00 campaign is recorded in the ledger;
-  twelve Holm-adjusted pairs survive at 0.05 on that fixture. A five-seed
+  twelve Holm-adjusted pairs survive at 0.05 on that fixture. A seven-seed
   steep-edge filter campaign runs all eight arms. H2 (`run_recipe_a` plus the
-  terminal finish, no mined seed bank) succeeds on 4/5 seeds and reaches 43
+  terminal finish, no mined seed bank) succeeds on 6/7 seeds and reaches 43
   layers at 0.0479 % pass / 99.6655 % stop; H7 (seeded + terminal finish)
-  succeeds on 5/5 and reaches 47 layers at 0.0533 % / 99.8444 %. Both pass the
+  succeeds on 7/7 and reaches 47 layers at 0.0533 % / 99.8444 %. Both pass the
   deep screen (>=40 layers, 10 nm min, R < 2 % / > 99 %). H2 is GA-initialized
   rather than seeded, but both still use terminal needle/LM refinement. The
-  28-pair family has no Holm-significant pair: with five seeds the smallest
-  raw p is 0.00794 and the adjusted value is 0.2222; seven seeds are needed
-  for a five-seed complete separation to clear the family threshold. The H7
-  diffusion proposal and a larger multi-fixture campaign are not implemented.
+  28-pair family has 24 Holm-significant pairs; only H1–H4, H1–H5, H1–H6, and
+  H2–H7 fail to separate. The H7 diffusion proposal and a larger
+  multi-fixture campaign are not implemented.
 - **Release gate:** A1/A3/A2 are not in published navette 0.10.0. The bridge
   is local-path-only until a navette release carries them; `cargo publish` is
   expected to fail verification meanwhile.

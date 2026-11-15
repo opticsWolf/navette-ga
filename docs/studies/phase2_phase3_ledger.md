@@ -327,43 +327,47 @@ first iteration. Navette `dev_ga` now clamps x0 to `[lb_floor, clamp_max]`
 ## Phase 3 — filter cross-fixture campaign
 
 `examples/phase2_filter_campaign.rs` runs all eight H0–H7 arms on the steep-edge
-filter fixture with five seeds (`20261121..20261125`), 12 individuals, 12
+filter fixture with seven seeds (`20261121..20261127`), 12 individuals, 12
 generations, a 40-layer H1 cap, a 60-layer decoder cap, and a 30,000 target.
 H7 enables the terminal LM/needle finish (`finish_h7 = true`); H2 uses the
 same terminal finish but no mined seed bank.
 
 | arm | best merit | median merit | median evals | best layers | best pass R | best stop R | min nm | deep screen |
 |---|---:|---:|---:|---:|---:|---:|---:|---|
-| H0 | 2,508,738.644838 | 2,537,335.623404 | 5,016 | 19 | 7.4384 % | 82.3686 % | 11.28 | no |
+| H0 | 1,065,970.763457 | 2,537,335.623404 | 5,825 | 23 | 6.7876 % | 89.6596 % | 44.80 | no |
 | H1 | 11,507,570.963514 | 15,700,600.461266 | 157 | 21 | 31.0453 % | 68.4584 % | 13.65 | no |
-| H2 | **969.321869** | 10,872.832468 | 2,503 | **43** | **0.0479 %** | **99.6655 %** | 10.00 | **yes** |
-| H3 | 450,359.454717 | 613,838.646928 | 181 | 22 | 2.3688 % | 92.3681 % | 11.33 | no |
+| H2 | **969.321869** | 6,502.397857 | 2,503 | **43** | **0.0479 %** | **99.6655 %** | 10.00 | **yes** |
+| H3 | 450,359.454717 | 649,857.215872 | 181 | 22 | 2.3688 % | 92.3681 % | 11.33 | no |
 | H4 | 11,813,287.226372 | 11,990,956.171653 | 313 | 22 | 35.2440 % | 67.0423 % | 39.31 | no |
-| H5 | 13,226,060.715772 | 15,599,501.719540 | 157 | 24 | 57.0656 % | 76.3681 % | 10.07 | no |
-| H6 | 16,273,132.297823 | 17,419,979.811375 | 52 | 21 | 42.3815 % | 62.9791 % | 33.93 | no |
-| H7 | **203.083830** | **1,287.867335** | 3,042 | **47** | **0.0533 %** | **99.8444 %** | 10.00 | **yes** |
+| H5 | 13,226,060.715772 | 13,788,985.490538 | 157 | 24 | 57.0656 % | 76.3681 % | 10.07 | no |
+| H6 | 13,851,983.146792 | 17,419,979.811375 | 52 | 25 | 34.8394 % | 63.8497 % | 16.58 | no |
+| H7 | **203.083830** | **2,134.569089** | 3,042 | **47** | **0.0533 %** | **99.8444 %** | 10.00 | **yes** |
 
 “Deep screen” means at least 40 layers, a 10 nm minimum thickness, passband
 average `R < 2 %`, and stopband average `R > 99 %`.
 
-At the fixed 30,000 target, H2 succeeds on 4/5 seeds with ERT `4,045.8`; H7
-succeeds on 5/5 with ERT `3,302.0`. H0, H1, H3, H4, H5, and H6 have no
-success, so their ERT is `none`.
+At the fixed 30,000 target, H2 succeeds on 6/7 seeds with ERT `3,688.7`; H7
+succeeds on 7/7 with ERT `3,201.7`. H0, H1, H3, H4, H5, and H6 have no
+success, so their ERT is `none`. H2's median merit (`6,502`) is above the
+target while H7's (`2,135`) is below it; H2 has one tail failure.
 
 H2 is the first **GA-initialized** design to cross 40 layers and pass the deep
 screen: it starts from `run_recipe_a` without a mined seed bank, then the
-terminal finish grows it to 43 layers at 0.0479 % pass / 99.6655 % stop. H7,
+terminal finish grows it to 43 layers at 0.0479 % pass / 99.6655 % stop. The
+GA cap remains 40; the three extra layers are terminal insertions. H7,
 which starts from the 40-layer chirped seed, reaches 47 layers at 0.0533 % /
-99.8444 %. Both are seeded or GA-initialized rather than a pure fixed-width
-GA discovery, but the H2 path no longer needs the mined seed bank. H3 alone
+99.8444 %. Both are GA-initialized or seeded rather than a pure fixed-width GA
+discovery, but the H2 path no longer needs the mined seed bank. H3 alone
 reaches 22 layers and 2.37 % pass; H1/H4/H5/H6 remain far from the target.
 
-The five-seed family has 28 pairs. No pair survives Holm at 0.05: the smallest
-raw two-sided rank-sum value is `0.00794` (complete separation), which becomes
-`0.2222` after correction. With 28 pairs, five seeds cannot produce a
-Holm-significant pair even under complete separation; seven seeds are the
-minimum for that ceiling. This is a target-success cross-fixture check, not a
-family-level ranking.
+With seven seeds the 28-pair family has **24 Holm-significant pairs** at 0.05.
+The four that do not survive are H1–H4 (`0.6259`), H1–H5 (`1.0000`),
+H1–H6 (`0.1515`), and H2–H7 (`0.6259`). H0 differs from every other arm;
+H1 differs from H2/H3/H7; H2 differs from H3/H4/H5/H6; H3 differs from
+H4/H5/H6/H7; H5/H6/H7 separate from the remaining low-depth arms. H2 and H7
+are both deep-screen passes but are not separable from each other on this
+family. This is a target/family result on one filter fixture, not a universal
+ranking.
 
 The first run also exposed a material-order bug in the example: the decoder
 pool is ordered L,H by index, while the hand-built template was H,L, so the
