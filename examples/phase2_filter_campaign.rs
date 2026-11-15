@@ -14,9 +14,9 @@ use navette::smatrix::synthesis::merit::{
 };
 use navette::smatrix::synthesis::pipeline::SpectralInputs;
 use navette::smatrix::synthesis::structure::{DesignStack, LayerSpec};
-use navette_ga::bridge::{EvaluatorOptions, FitnessEvaluator, MemeticOperator, StackTemplate};
+use navette_ga::bridge::{EvaluatorOptions, FitnessEvaluator, MemeticOperator};
 use navette_ga::decoder::{Decoder, Genome, LayerGene};
-use navette_ga::materials::{decoder_pool, load_library, ThicknessBounds};
+use navette_ga::materials::{decoder_pool, load_library, stack_template, ThicknessBounds};
 
 fn table(name: &str, n: f64, wavelengths: &[f64]) -> MaterialDef {
     MaterialDef {
@@ -83,18 +83,21 @@ use navette_ga::engines::{
     H0Config, IslandRecipeConfig, MemeticSchedule, ProposalConfig, RecipeAConfig, VlRecipeAConfig,
 };
 
-fn genome_from_stack(stack: &DesignStack) -> Genome {
+fn genome_from_stack(decoder: &Decoder, stack: &DesignStack) -> Genome {
+    let materials = decoder.pool().materials();
     Genome::from(
         stack
             .films()
             .iter()
             .map(|film| {
-                let material = if film.material.as_ref() == "H" {
-                    0.25
-                } else {
-                    0.75
-                };
-                let thickness = ((film.d_nm - 10.0) / 290.0).clamp(0.0, 1.0);
+                let index = materials
+                    .iter()
+                    .position(|material| material.name() == film.material.as_ref())
+                    .unwrap();
+                let material = (index as f64 + 0.5) / materials.len() as f64;
+                let lo = materials[index].min_thickness_nm();
+                let hi = materials[index].max_thickness_nm();
+                let thickness = ((film.d_nm - lo) / (hi - lo)).clamp(0.0, 1.0);
                 LayerGene::new(material, thickness, 1.0)
             })
             .collect::<Vec<_>>(),
@@ -117,14 +120,10 @@ fn main() {
     let pool = decoder_pool(&loaded).unwrap();
     let decoder = Decoder::without_constraints(pool)
         .unwrap()
-        .with_max_layers(50);
+        .with_max_layers(60);
     let ambient = LayerSpec::constant("air", 1.0, 0.0, 0.0, wavelengths.len());
     let substrate = LayerSpec::constant("substrate", 1.52, 0.0, 0.0, wavelengths.len());
-    let mut h = LayerSpec::constant("H", 2.30, 0.0, 100.0, wavelengths.len());
-    h.label = Some("H".into());
-    let mut l = LayerSpec::constant("L", 1.45, 0.0, 100.0, wavelengths.len());
-    l.label = Some("L".into());
-    let template = StackTemplate::new(ambient.clone(), substrate.clone(), vec![h, l]).unwrap();
+    let template = stack_template(ambient.clone(), substrate.clone(), &loaded).unwrap();
     let spec = target(&[(400.0, 500.0, 0.0), (600.0, 900.0, 1.0)], &wavelengths);
     let mut evaluator = FitnessEvaluator::new(
         wavelengths.clone(),
@@ -165,7 +164,7 @@ fn main() {
         films.push(l);
     }
     let seed_stack = DesignStack::with_films(ambient, substrate, films).unwrap();
-    let seed = genome_from_stack(&seed_stack);
+    let seed = genome_from_stack(&decoder, &seed_stack);
 
     let options = ComparisonOptions {
         recipe: RecipeAConfig {
@@ -208,6 +207,7 @@ fn main() {
             noise_sigma: 0.10,
             proposals_per_seed: 4,
         }),
+        finish_h7: true,
         terminal_insertions: 10,
         ..ComparisonOptions::default()
     };

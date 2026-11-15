@@ -41,7 +41,7 @@ crate claims ("only X does Y") mean "among surveyed crates", not the world.*
   MOME archive and S4-lite illuminated run, the S6 `moors` split, the H0
   control, I1 cross-island multi-parent crossover, the G7 campaign object, and
   the G8 kurobako problem/H0-H7 registry are implemented and tested. Full
-  suite: 81 tests. Navette-native A4 and a GA-discovered
+  suite: 83 tests. Navette-native A4 and a GA-discovered
   40-layer Recipe B filter remain; H6, the H0-H7 dispatcher, the filter depth
   bake, a ten-seed H0-H7 campaign, and a seeded 40-layer filter artifact
   exist. Details: `docs/studies/phase2_phase3_ledger.md`.

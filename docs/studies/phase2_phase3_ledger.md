@@ -10,7 +10,7 @@ repository, and every limitation is listed rather than inferred away.
 - `navette` local `dev_ga` at `5adb40c` (A1/A3, A2 introspection, public
   joint scan, the core `ndarray` 0.16 lift, and the LM x0-floor fix).
 - `navette-ga` single crate, LGPL-3.0-or-later.
-- `cargo test --all-features`: **81 passed**.
+- `cargo test --all-features`: **83 passed**.
 - `cargo clippy --all-targets --all-features -- -D warnings`: clean.
 - `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features`: clean.
 - `navette` with `ga-introspect`: **802 passed, 1 ignored**.
@@ -298,29 +298,40 @@ The run also exposed a navette start-point bug: an inserted film below the
 first iteration. Navette `dev_ga` now clamps x0 to `[lb_floor, clamp_max]`
 (`5adb40c`); the regression test starts at 5 nm under a 10 nm floor.
 
-## Phase 3 — filter cross-fixture campaign (negative)
+## Phase 3 — filter cross-fixture campaign
 
 `examples/phase2_filter_campaign.rs` runs H0/H1/H2/H3/H6/H7 on the steep-edge
 filter fixture with two seeds, 12 individuals, 12 generations, a 40-layer H1
-cap, a 50-layer decoder cap, and a 30,000 target. It is deliberately a small
-budget; the result is a negative cross-fixture check, not a filter win.
+cap, a 60-layer decoder cap, and a 30,000 target. H7 enables the terminal
+LM/needle finish (`finish_h7 = true`), so the seeded arm can grow past its
+40-layer seed.
 
 | arm | best merit | median merit | median evals | best layers | best pass R | best stop R |
 |---|---:|---:|---:|---:|---:|---:|
-| H0 | 1,940,856.096160 | 4,004,565.279640 | 4,054 | 20 | 10.5380 % | 84.9588 % |
-| H1 | 11,945,236.921251 | 12,672,364.069557 | 157 | 23 | 29.1899 % | 66.9576 % |
-| H2 | 18,572,978.563085 | 22,011,915.921102 | 4,525 | 43 | 67.4369 % | 76.0312 % |
-| H3 | 12,723,657.826156 | 16,576,895.796876 | 177 | 19 | 15.7042 % | 61.5766 % |
-| H6 | 11,945,236.921251 | 12,672,364.069557 | 52 | 23 | 29.1899 % | 66.9576 % |
-| H7 | 9,623,203.927540 | 10,293,105.737320 | 157 | 24 | 48.0990 % | 83.5951 % |
+| H0 | 2,537,335.623404 | 2,537,335.623404 | 5,825 | 19 | 10.2881 % | 86.4268 % |
+| H1 | 12,761,072.799092 | 16,446,230.894519 | 157 | 20 | 23.8023 % | 65.1335 % |
+| H2 | 6,502.397857 | 19,146.536651 | 2,506 | 39 | 0.2659 % | 99.1054 % |
+| H3 | 613,838.646928 | 834,845.976756 | 181 | 31 | 6.7147 % | 92.8688 % |
+| H6 | 16,273,132.297823 | 34,122,760.373636 | 52 | 21 | 42.3815 % | 62.9791 % |
+| H7 | **1,287.867335** | **2,894.049323** | 3,045 | **56** | **0.1408 %** | **99.7152 %** |
 
-No arm reaches the 30,000 target; every ERT is `none`, and every two-seed
-pair has Holm-adjusted `p = 1.0`. H2 can grow to 43 layers but its passband and
-stopband are both poor; H7's 40-layer seed is eroded to 24 layers without a
-terminal LM. This confirms that the small-budget GA/phased arms do not replace
-the seeded 40-layer + LM artifact on this deep target. The filter fixture needs
-a much larger budget, a different merit schedule, or the terminal finish for
-the seeded arm before it can support a cross-target ranking.
+At the fixed 30,000 target, H2 and H7 succeed on both seeds: H2 ERT `2,498.0`,
+H7 ERT `2,593.0`. H0, H1, H3, and H6 have no success, so their ERT is `none`.
+Every two-seed pair is Holm-adjusted to `p = 1.0`; two seeds cannot support a
+family-level ranking claim.
+
+The terminal finish changes the interpretation from the earlier negative
+check: H2 reaches 39 layers at 0.27 % pass / 99.11 % stop, and H7 grows the
+40-layer seed to 56 layers at 0.14 % pass / 99.72 % stop. This is a strong
+seeded + LM/needle result, not a pure GA discovery. H3 alone reaches 31 layers
+but only 6.7 % pass / 92.9 % stop; H1/H6 do not get close.
+
+The first run also exposed a material-order bug in the example: the decoder
+pool is ordered L,H by index, while the hand-built template was H,L, so the
+canonical write-back silently swapped materials. The example now uses
+`materials::stack_template` and `StackTemplate::check_grammar` refuses a
+decoder/template order mismatch before any solve. The write-back itself now
+preserves merit once the orders match.
 
 ## Phase 3 — H0–H7 dispatch and campaign loop
 
@@ -336,12 +347,13 @@ implements each arm:
 | H4 | `run_recipe_a_tribes` with alternating island mutation regimes |
 | H5 | `run_recipe_a_illuminated` |
 | H6 | `run_recipe_a_surrogate` |
-| H7 | `run_recipe_a_vl_seeded` or `run_recipe_a_vl_proposed` |
+| H7 | `run_recipe_a_vl_seeded` / `run_recipe_a_vl_proposed`, optionally terminal-finished |
 
 `ComparisonOptions` carries the shared configs, the operator, the mined seed
-bank, and the terminal insertion cap. H2/H3 return an explicit error when no
-operator is supplied; H7 returns an explicit error when the seed bank is
-empty. The dispatcher resets the shared solver counter before each arm and
+bank, the terminal insertion cap, and the optional `finish_h7` terminal
+finish. H2/H3 return an explicit error when no operator is supplied; H7
+returns an explicit error when the seed bank is empty, and its terminal
+finish needs the same operator. The dispatcher resets the shared solver counter before each arm and
 returns the counter with the result.
 
 `bench::run_comparison_campaign` applies a fixed seed list to every arm
@@ -367,35 +379,37 @@ the same campaign knobs; the earlier three-seed table is superseded.
 
 | arm | best merit | median merit | median evals | best avg R | layers |
 |---|---:|---:|---:|---:|---:|
-| H0 | 24,129.155869 | 24,131.772343 | 1,942 | 3.3367 % | 3 |
+| H0 | 24,129.155869 | 24,131.772343 | 1,918 | 3.3367 % | 3 |
 | H1 | 10,087.289778 | 22,603.001902 | 745 | 2.0015 % | 4 |
-| H2 | **1,102.636453** | 22,560.503673 | 803 | **0.6255 %** | 7 |
-| H3 | 5,749.795389 | 22,638.853059 | 772 | 1.2040 % | 5 |
+| H2 | 3,386.352950 | 22,560.503673 | 783 | 1.0965 % | 4 |
+| H3 | **1,095.863799** | 22,576.545574 | 797 | **0.6105 %** | 7 |
 | H4 | 16,669.532388 | 18,191.068420 | 1,489 | 2.8110 % | 2 |
 | H5 | 19,035.854603 | 23,046.255052 | 745 | 2.9958 % | 1 |
 | H6 | 23,639.934509 | 27,137.870962 | **31** | 3.2991 % | 3 |
 | H7 | 16,669.257814 | 16,689.336434 | 745 | 2.8109 % | 2 |
 
-At the fixed 30,000 target: H0 has 6/10 successes and ERT 3,326.8; H1 10/10
-and 745.0; H2 10/10 and 805.4; H3 10/10 and 771.9; H4 10/10 and 1,489.0; H5
+At the fixed 30,000 target: H0 has 6/10 successes and ERT 3,344.5; H1 10/10
+and 745.0; H2 10/10 and 790.2; H3 10/10 and 796.9; H4 10/10 and 1,489.0; H5
 10/10 and 745.0; H6 6/10 and 80.7; H7 10/10 and 745.0. H6's low ERT reflects
 only 31 true TMM calls and censored failures, not better quality; its median
-merit is above the target. H2 has the best run but its median matches H1, so
-the terminal finish is high-variance on this fixture.
+merit is above the target. H2 and H3 have the best single runs but their
+medians still resemble H1, so the memetic/terminal stages are high-variance
+on this fixture.
 
-The Holm-adjusted family has 28 pairs. Eleven survive at 0.05:
+The Holm-adjusted family has 28 pairs. Twelve survive at 0.05:
 
 ```text
-H0-H3 0.008940   H0-H4 0.004034   H0-H7 0.004034
-H1-H6 0.006559   H1-H7 0.044947   H2-H6 0.006559
+H0-H2 0.015636   H0-H3 0.015636   H0-H4 0.004034   H0-H7 0.004034
+H1-H6 0.006559   H1-H7 0.042450   H2-H6 0.006559
 H3-H6 0.008004   H4-H6 0.004085   H5-H6 0.008004
 H5-H7 0.004085   H6-H7 0.004085
 ```
 
-H0 is significantly worse than H3/H4/H7; H6 is significantly worse in quality
-than every other arm except H0; H7 is significantly better than H1 and H5.
-H0–H1 and H0–H2 are not significant after Holm (adjusted 0.0657). This is
-fixed-seed evidence on one fixture and one target, not a universal ranking.
+H0 is significantly worse than H2/H3/H4/H7; H6 is significantly worse in
+quality than every other arm except H0; H7 is significantly better than H1
+and H5. H0–H1 and H3–H7 are not significant after Holm (adjusted 0.0619).
+This is fixed-seed evidence on one fixture and one target, not a universal
+ranking.
 
 ## Phase 2 — H0 control
 

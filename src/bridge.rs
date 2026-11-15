@@ -551,6 +551,28 @@ impl StackTemplate {
         decoder: &DecoderPool,
         grammar: &AdjacencyGrammar,
     ) -> Result<(), String> {
+        // The template and decoder are index-coupled: `assemble` maps a
+        // decoded material index straight into `self.materials[index]`.
+        // A pool sorted differently from the template silently swaps
+        // materials, so refuse before any solve.
+        let materials = decoder.materials();
+        if self.materials.len() < materials.len() {
+            return Err(format!(
+                "decoder/template material count mismatch: decoder has {}, template has {}",
+                materials.len(),
+                self.materials.len()
+            ));
+        }
+        for (index, (template, material)) in self.materials.iter().zip(materials.iter()).enumerate()
+        {
+            if template.material.as_ref() != material.name() {
+                return Err(format!(
+                    "decoder/template material order mismatch at index {index}:                      template has {:?}, decoder has {:?}",
+                    template.material,
+                    material.name()
+                ));
+            }
+        }
         let Some(rules) = &self.boundary.insert else {
             return Ok(());
         };
@@ -1073,27 +1095,31 @@ impl MemeticOperator {
         };
 
         for _ in 0..max_insertions {
+            let current_merit = evaluator.evaluate(stack)?;
             let scan =
                 stack.needle_scan(evaluator.context(), &self.spectral, &self.pool, &self.cfg)?;
             report.scans += 1;
+            // Stage the insertion and its polish on a clone. The insertion is
+            // committed only when the *post-polish* merit improves: the scan
+            // predictor is not allowed to leave a worse stack behind.
             let mut accepted = None;
             for candidate in &scan.candidates {
                 if !candidate.is_improving() {
                     break;
                 }
                 let mut trial = stack.clone();
-                trial.insert_needle_candidate(&self.pool, candidate)?;
+                let insertion = trial.insert_needle_candidate(&self.pool, candidate)?;
+                let polish = trial.polish_needles(evaluator.context_mut(), self.polish.clone())?;
                 let merit = evaluator.evaluate(&trial)?;
-                if merit < scan.current_merit {
-                    accepted = Some((candidate.clone(), merit));
+                if merit < current_merit {
+                    accepted = Some((insertion, trial, merit, polish));
                     break;
                 }
             }
-            let Some((candidate, merit_after_insert)) = accepted else {
+            let Some((insertion, trial, merit_after_insert, polish)) = accepted else {
                 break;
             };
-            let insertion = stack.insert_needle_candidate(&self.pool, &candidate)?;
-            let polish = stack.polish_needles(evaluator.context_mut(), self.polish.clone())?;
+            *stack = trial;
             report.steps.push(MemeticStep {
                 insertion,
                 merit_after_insert,
@@ -1921,6 +1947,25 @@ mod tests {
                 .all(|candidate| !candidate.site.boundary),
             "{scan:?}"
         );
+    }
+
+    #[test]
+    fn template_and_decoder_material_order_must_match() {
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0, 1),
+            constant("substrate", 1.52, 0.0, 1),
+            vec![constant("H", 2.2, 0.0, 1), constant("L", 1.46, 0.0, 1)],
+        )
+        .unwrap();
+        let pool = MaterialPool::new(vec![
+            Material::new("L", 10.0, 200.0).unwrap(),
+            Material::new("H", 20.0, 300.0).unwrap(),
+        ])
+        .unwrap();
+        let error = template
+            .check_grammar(&pool, &AdjacencyGrammar::all_allowed(2))
+            .unwrap_err();
+        assert!(error.contains("material order mismatch"), "{error}");
     }
 
     #[test]

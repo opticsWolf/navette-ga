@@ -39,7 +39,7 @@ I1 cross-island multi-parent crossover, the G7 campaign queue/pins/pruner,
 the G8 kurobako problem/H0–H7 registry and dispatcher, the G4/S2 mid-loop
 needle schedule for single-island and ring runs, the H6 linear surrogate, and
 the H7 mined-seed fallback and optional proposal expansion. Full suite:
-**81 tests**;
+**83 tests**;
 `--all-features` includes the kurobako proof module.
 
 Limits are explicit: navette-native A4 (per-material bounds and the

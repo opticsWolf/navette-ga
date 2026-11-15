@@ -27,7 +27,7 @@ amendments are implemented by the owner, never requested.*
   `cycle::joint_needle_scan` and the A2 merit gradient (`d9faa79`); `c9e964d` lifts the core to `ndarray` 0.16 so navette, `moors`, and `navette-ga` share one array major; `5adb40c` clamps the LM start to the policy floor.
 - **`navette-ga`:** G2 decoder, G1 bridge, A1 memetic operator, fixed and
   variable-length Recipe A, the Phase 2 ring, and the new Phase 2/3 modules
-  (`moors_split`, `qd`, `study`, `bench`). Full suite: **81 tests**.
+  (`moors_split`, `qd`, `study`, `bench`). Full suite: **83 tests**.
 - **Phase 1 exit artifact:** G3 rung-2 material loader; terminal LM + needle
   finish with Lamarckian write-back and actual-trial scan certificate;
   C00-class ledger at `docs/studies/phase1_c00_ar.md` (8 layers, avg
@@ -79,11 +79,12 @@ amendments are implemented by the owner, never requested.*
   `bench::expected_running_time` adds a fixed-target censored ERT report, and
   `bench::family_rank_sum` applies pairwise Mann–Whitney with Holm correction
   over the campaign family. A ten-seed C00 campaign is recorded in the ledger;
-  eleven Holm-adjusted pairs survive at 0.05 on that fixture. A two-seed
-  steep-edge filter campaign is a negative cross-fixture check: no arm reaches
-  the 30,000 target, and H2's 43-layer growth has poor pass/stop quality. The
-  H7 diffusion proposal and a larger multi-fixture campaign are not
-  implemented.
+  twelve Holm-adjusted pairs survive at 0.05 on that fixture. A two-seed
+  steep-edge filter campaign has H2 and terminal-finished H7 succeeding on both
+  seeds: H2 reaches 39 layers at 0.27 % pass / 99.11 % stop, and H7 grows to
+  56 layers at 0.14 % / 99.72 %. This is a seeded + LM/needle result, not a
+  pure GA discovery; two seeds give no family-level ranking. The H7 diffusion
+  proposal and a larger multi-fixture campaign are not implemented.
 - **Release gate:** A1/A3/A2 are not in published navette 0.10.0. The bridge
   is local-path-only until a navette release carries them; `cargo publish` is
   expected to fail verification meanwhile.

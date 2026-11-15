@@ -270,7 +270,9 @@ pub struct ComparisonOptions {
     /// Optional Gaussian proposal expansion for H7. `None` uses the raw seed
     /// bank (the mined-seed fallback).
     pub proposal: Option<ProposalConfig>,
-    /// Insertion cap passed to the H2 terminal finish.
+    /// Run the H2-style terminal LM/needle finish on H7 as well.
+    pub finish_h7: bool,
+    /// Insertion cap passed to the H2/H7 terminal finish.
     pub terminal_insertions: usize,
 }
 
@@ -288,6 +290,7 @@ impl Default for ComparisonOptions {
             seeds: Vec::new(),
             seed_fraction: 1.0,
             proposal: None,
+            finish_h7: false,
             terminal_insertions: 20,
         }
     }
@@ -403,7 +406,7 @@ pub fn run_comparison_arm(
             if options.seeds.is_empty() {
                 return Err("H7 needs a non-empty mined-seed bank".into());
             }
-            if let Some(proposal) = options.proposal {
+            let result = if let Some(proposal) = options.proposal {
                 run_recipe_a_vl_proposed(
                     decoder,
                     template,
@@ -422,6 +425,23 @@ pub fn run_comparison_arm(
                     &options.seeds,
                     options.seed_fraction,
                 )?
+            };
+            if options.finish_h7 {
+                let operator = options
+                    .operator
+                    .as_ref()
+                    .ok_or_else(|| "H7 terminal finish needs a memetic operator".to_string())?;
+                finish_recipe_a(
+                    decoder,
+                    template,
+                    evaluator,
+                    result,
+                    operator,
+                    options.terminal_insertions,
+                )?
+                .0
+            } else {
+                result
             }
         }
     };
@@ -817,6 +837,7 @@ mod tests {
                 noise_sigma: 0.1,
                 proposals_per_seed: 1,
             }),
+            finish_h7: false,
             terminal_insertions: 4,
         }
     }
@@ -934,6 +955,35 @@ mod tests {
         }
 
         assert!(expected_running_time(&campaign, f64::NAN).is_err());
+    }
+
+    #[test]
+    fn h7_terminal_finish_uses_the_shared_operator() {
+        let problem = problem();
+        let mut evaluator = problem.evaluator.clone();
+        let mut options = comparison_options(&problem);
+        options.finish_h7 = true;
+        let run = run_comparison_arm(
+            &problem.decoder,
+            &problem.template,
+            &mut evaluator,
+            ComparisonArm::H7,
+            &options,
+        )
+        .unwrap();
+        assert!(run.result.merit.is_finite());
+        assert!(run.evaluations > 0);
+
+        options.operator = None;
+        let error = run_comparison_arm(
+            &problem.decoder,
+            &problem.template,
+            &mut evaluator,
+            ComparisonArm::H7,
+            &options,
+        )
+        .unwrap_err();
+        assert!(error.contains("terminal finish"));
     }
 
     #[test]
