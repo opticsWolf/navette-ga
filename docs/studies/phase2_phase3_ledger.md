@@ -10,7 +10,7 @@ repository, and every limitation is listed rather than inferred away.
 - `navette` local `dev_ga` at `c9e964d` (A1/A3, A2 introspection, public
   joint scan, and the core `ndarray` 0.16 lift).
 - `navette-ga` single crate, LGPL-3.0-or-later.
-- `cargo test --all-features`: **75 passed**.
+- `cargo test --all-features`: **76 passed**.
 - `cargo clippy --all-targets --all-features -- -D warnings`: clean.
 - `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features`: clean.
 - `navette` with `ga-introspect`: **801 passed, 1 ignored**.
@@ -49,8 +49,9 @@ unit tests did not catch:
   the island/illuminated trajectories and is a correctness fix, not a tuning
   choice.
 
-The 40-layer steep-edge filter, the multi-seed equal-compute H0/H1/H3
-campaign, and H6/H7 implementations remain open.
+The H6 linear-surrogate arm and the H7 mined-seed fallback are now
+implemented; the full H7 diffusion proposal, the multi-seed H0/H1/H3
+campaign, and a Recipe B discovery run remain open.
 
 ## Phase 2 — joint boundary needles
 
@@ -199,6 +200,37 @@ The archive contains six occupied cells and the depth/thickness front is
 printed by the example. The next filter step needs a target that rewards depth
 and the insertion-heavy Recipe B path, not a larger cap on the AR fixture.
 
+## Phase 2 — forty-layer steep-edge filter
+
+`examples/phase2_filter_40.rs` builds a chirped H/L quarter-wave stack and
+optimizes it against a long-pass edge target: R ≈ 0 below 500 nm and R ≈ 1
+above 600 nm. The stack is kept at 40 layers with
+`ThinLayerPolicy::ClampUpAlways`; all films are optimized and the evaluator
+uses the same 10 nm floor as the decoder.
+
+The chirped seed is initially reflective everywhere (merit `38312021.609`).
+A bounded LM run (10,000 iterations, 14,227 evaluations) produced:
+
+```text
+merit=17161.441837190
+layers=40
+min_thickness_nm=10.000000
+passband_avg_R=0.007983
+stopband_avg_R=0.990983
+production_filter=pass
+R(450)=0.007374
+R(500)=0.011982
+R(550)=0.674465
+R(600)=0.984061
+R(700)=0.999171
+```
+
+The LM hit its iteration cap (`lm_converged=false`), so this is a feasible
+40-layer production filter, not a converged optimum. It is a seeded stack plus
+thickness refinement, **not** a GA discovery of a 40-layer design. The next
+Recipe B step is to run insertion-heavy H7/H3 from a seed bank and compare the
+discovered filter against this artifact under the same production screen.
+
 ## Phase 2 — H0 control
 
 `engines::run_h0_control` runs independent random starts, a bounded LM
@@ -245,6 +277,41 @@ search after it converges.
 The repeat runner is fixed-seed; the rank-sum primitive is normal-approximate
 when ties are present, and ERT reporting and the full H0–H7 multiplicity plan
 are not claimed yet.
+
+## Phase 3 — H6 linear surrogate screen
+
+`engines::run_recipe_a_surrogate` wraps the fixed-width Recipe A fitness
+closure with a small ridge-regularized linear model over depth, total
+thickness, mean/min thickness, and material fractions. The first `warmup`
+calls and every `sample_every`-th later call are evaluated by navette; the rest
+return the current prediction. The final best stack is always re-evaluated by
+navette, so a surrogate hallucination cannot become the reported merit.
+
+C00 with the default screen (`warmup=16`, `sample_every=4`, `refit_every=8`):
+
+```text
+surrogate_true=125
+surrogate_predicted=324
+surrogate_samples=124
+surrogate_fits=15
+surrogate_total_evaluations=247
+merit=24129.357559928
+avg_R=0.033369146
+layers=5
+terminal_insertions=20
+scan_candidates_after=37
+actual_improving_after=0
+```
+
+It used 125 true merit evaluations in the GA closure and 247 in total
+including the terminal finish. The direct H1 control at a 125-evaluation GA
+budget (then the same terminal finish) used 452 total evaluations and reached
+`avg_R = 2.6733 %` with 18 layers. H6 therefore saved about 45 % of the true
+evaluations but was **worse** in quality on this cheap-TMM fixture. That is
+consistent with the strategy's own scope: surrogate screening is for regimes
+where a true evaluation is expensive, not a substitute for TMM when TMM is
+already cheap. This is a linear screening arm, not a GP/Bayesian optimizer,
+and the comparison is one seed and one target.
 
 ## Phase 2 — S4/F1 archive and S6 split
 
@@ -303,9 +370,9 @@ measured on the same physics.
 Limitations: the kurobako registration is a problem definition, not a full
 H0–H7 dispatch (H6 screening and the H7 seeded proposal arm are not wired);
 the archive illumination is not selection; the C00 depth bake is a negative
-scale signal, not a 40-layer steep-edge filter; the equal-budget H0/H1 result
-is five seeds on one target; the H7 arm is a mined-seed fallback, not a
-diffusion implementation; H6 is still unwired; navette-native A4 and the
-released-navette gate remain open. The core `ndarray` lift (`c9e964d`) resolves the earlier
+scale signal; the 40-layer filter is a seeded stack plus LM, not a GA
+discovery; the equal-budget H0/H1 result is five seeds on one target; the H7
+arm is a mined-seed fallback, not a diffusion implementation; H6 is a linear
+screen, not a GP; navette-native A4 and the released-navette gate remain open. The core `ndarray` lift (`c9e964d`) resolves the earlier
 navette/moors array-major split; it is a dependency-major change for the next
 navette release.

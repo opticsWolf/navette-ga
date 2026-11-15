@@ -27,7 +27,7 @@ amendments are implemented by the owner, never requested.*
   `cycle::joint_needle_scan` and the A2 merit gradient (`d9faa79`); `c9e964d` lifts the core to `ndarray` 0.16 so navette, `moors`, and `navette-ga` share one array major.
 - **`navette-ga`:** G2 decoder, G1 bridge, A1 memetic operator, fixed and
   variable-length Recipe A, the Phase 2 ring, and the new Phase 2/3 modules
-  (`moors_split`, `qd`, `study`, `bench`). Full suite: **75 tests**.
+  (`moors_split`, `qd`, `study`, `bench`). Full suite: **76 tests**.
 - **Phase 1 exit artifact:** G3 rung-2 material loader; terminal LM + needle
   finish with Lamarckian write-back and actual-trial scan certificate;
   C00-class ledger at `docs/studies/phase1_c00_ar.md` (8 layers, avg
@@ -51,22 +51,28 @@ amendments are implemented by the owner, never requested.*
   Recipe B filter remains open. The first five-seed equal-solver-budget
   H0/H1 run (2k and 20k evaluations) has H1 ahead at both budgets on this
   fixture; tie-corrected normal-approximation rank-sum p-values are 0.0082 and
-  0.0053. The H7 seed-bank fallback and the C00 depth bake are also recorded.
-  This is fixed-seed evidence, not the final multiplicity-corrected campaign.
-  Details and limits:
+  0.0053. A seeded 40-layer chirped H/L stack plus LM reaches passband
+  avg R = 0.80 % and stopband avg R = 99.10 % under the production screen;
+  this is a seeded filter artifact, not a GA discovery. The H6 linear
+  surrogate used 247 total true evaluations but lost to a 125-GA-budget H1
+  control on quality (3.34 % vs 2.67 %); screening is for expensive-evaluation
+  regimes, not a cheap-TMM win. The H7 seed-bank fallback is recorded. This is
+  fixed-seed evidence, not the final multiplicity-corrected campaign. Details
+  and limits:
   `docs/studies/phase2_phase3_ledger.md`.
 - **Phase 3 evidence:** I1 cross-island multi-parent crossover with
   homogenisation readout; G7 campaign queue/pins/pruner/importance; G8
-  kurobako problem and H0-H7 registry; H7's variable-length seeded/mined-motif
-  fallback (`run_recipe_a_vl_seeded`). H6 screening and the H7 diffusion
-  proposal are not wired.
+  kurobako problem and H0-H7 registry; H6's linear surrogate screen
+  (`run_recipe_a_surrogate`); H7's variable-length seeded/mined-motif fallback
+  (`run_recipe_a_vl_seeded`). The H7 diffusion proposal is not implemented.
 - **Release gate:** A1/A3/A2 are not in published navette 0.10.0. The bridge
   is local-path-only until a navette release carries them; `cargo publish` is
   expected to fail verification meanwhile.
-- **Remaining:** an optional nalgebra `DMatrix` adapter (not required), navette-native
-  A4 (per-material bounds and insert/migrate grammar hook), H6/H7 dispatch, a
-  40-layer steep-edge filter, and the multi-seed equal-compute H0/H1/H3
-  campaign; the released-navette gate remains.
+- **Remaining:** an optional nalgebra `DMatrix` adapter (not required),
+  navette-native A4 (per-material bounds and insert/migrate grammar hook), the
+  H7 diffusion proposal and H0-H7 dispatch, a GA-discovered Recipe B filter
+  (the seeded 40-layer artifact exists), and the multi-seed equal-compute
+  H0/H1/H3 campaign; the released-navette gate remains.
 
 ## 0. What navette already is (and why the strategy collapses around it)
 

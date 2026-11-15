@@ -17,9 +17,12 @@ artifact is recorded in
 [`docs/studies/phase1_c00_ar.md`](docs/studies/phase1_c00_ar.md): a C00-class
 H/L AR over 400–900 nm with Lamarckian write-back and a zero-actual-improvement
 scan certificate. The same example can run the H3 schedule (`--memetic`) or
-an equal-solver-budget H0/H1 comparison (`--h0-budget N`), or the H7 mined-seed
-fallback (`--seeded`); the first C00 comparison puts H1 ahead on all five
-seeds at 2k and 20k evaluations.
+an equal-solver-budget H0/H1 comparison (`--h0-budget N`), the H6 surrogate
+screen (`--surrogate`), or the H7 mined-seed fallback (`--seeded`); the first
+C00 comparison puts H1 ahead on all five seeds at 2k and 20k evaluations, and
+the H6 screen is cheaper but not better at equal true budget on this cheap-TMM
+fixture. The forty-layer seeded filter artifact is
+`examples/phase2_filter_40.rs`.
 
 The boundary path now covers read-only joint gap acceptance, structural
 candidate enumeration, transactional chosen-locus insertion, the spectral
@@ -31,13 +34,14 @@ exposed through the bridge/decoder. Phase 2/3 modules add the S4/F1 MOME
 archive and illuminated Recipe A run, the S6 `moors` split, the H0 control,
 I1 cross-island multi-parent crossover, the G7 campaign queue/pins/pruner,
 the G8 kurobako problem/H0–H7 registry, the G4/S2 mid-loop needle schedule
-for single-island and ring runs, and the H7 mined-seed fallback. Full suite:
-**75 tests**;
+for single-island and ring runs, the H6 linear surrogate, and the H7
+mined-seed fallback. Full suite: **76 tests**;
 `--all-features` includes the kurobako proof module.
 
 Limits are explicit: navette-native A4 (per-material bounds and the
-insert/migrate grammar hook), H6 screening/H7 seeded dispatch, a production
-40-layer merit-vs-depth bake, and an equal-compute H0/H1/H3 campaign remain.
+insert/migrate grammar hook), the H7 diffusion proposal and H0-H7 dispatch,
+a GA-discovered Recipe B filter (the seeded 40-layer artifact exists), and
+the multi-seed H0/H1/H3 campaign remain.
 The mid-loop schedule has one C00 overhead measurement, not a controlled arm
 result. Consumer-side A4 is now
 enforced on every GA/terminal/joint path; the earlier C00 ledger was
@@ -72,6 +76,7 @@ src/
 examples/
   phase0_bench.rs          # G9: 61-wavelength evaluate/LM timing harness
   phase2_depth_bake.rs     # C00 depth/MOME bake with production screen
+  phase2_filter_40.rs      # forty-layer seeded H/L edge-filter artifact
 docs/
   studies/                 # Phase 1 C00-class AR ledger and run artifacts
   README.md                # research/paper index

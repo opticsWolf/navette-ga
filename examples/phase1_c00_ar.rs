@@ -6,8 +6,10 @@
 //! the scan certificate printed with the result. It is intentionally small
 //! enough to rerun as a check; the numbers in the ledger note come from this
 //! exact command. Pass `--memetic` to run the same config through the
-//! mid-loop H3 schedule and print its wall-time share, or `--h0-budget N` to
-//! compare H0 and H1 at the same solver-evaluation count.
+//! mid-loop H3 schedule and print its wall-time share, `--h0-budget N` to
+//! compare H0 and H1 at the same solver-evaluation count, `--ga-budget N` to
+//! stop H1 at a true-evaluation budget, or `--surrogate` for the H6 linear
+//! screen.
 
 use std::collections::BTreeMap;
 
@@ -21,9 +23,9 @@ use navette::smatrix::synthesis::structure::LayerSpec;
 use navette_ga::bridge::{EvaluatorOptions, FitnessEvaluator, MemeticOperator, StackTemplate};
 use navette_ga::decoder::{Decoder, Genome, LayerGene};
 use navette_ga::engines::{
-    compare_h0_and_ga_repeats, finish_recipe_a, run_recipe_a, run_recipe_a_memetic,
-    run_recipe_a_vl_seeded, H0Config, MemeticSchedule, RecipeAConfig, TerminalReport,
-    VlRecipeAConfig,
+    compare_h0_and_ga_repeats, finish_recipe_a, run_recipe_a, run_recipe_a_budget,
+    run_recipe_a_memetic, run_recipe_a_surrogate, run_recipe_a_vl_seeded, H0Config,
+    MemeticSchedule, RecipeAConfig, SurrogateConfig, TerminalReport, VlRecipeAConfig,
 };
 use navette_ga::materials::{decoder_pool, load_library, stack_template, ThicknessBounds};
 use navette_ga::study::mann_whitney_u;
@@ -244,6 +246,46 @@ fn main() {
             "rank_sum_u={:.6} p_value={:.9} exact={}",
             rank_sum.u, rank_sum.p_value, rank_sum.exact
         );
+        return;
+    }
+
+    if let Some(budget) = args
+        .iter()
+        .position(|arg| arg == "--ga-budget")
+        .and_then(|index| args.get(index + 1))
+        .and_then(|value| value.parse::<usize>().ok())
+    {
+        let run = run_recipe_a_budget(&decoder, &template, &evaluator, &cfg, budget).unwrap();
+        let mut evaluator = evaluator;
+        let (finished, report): (_, TerminalReport) =
+            finish_recipe_a(&decoder, &template, &mut evaluator, run, &operator, 20).unwrap();
+        println!("mode=ga_budget budget={budget}");
+        println!("ga_total_evaluations={}", evaluator.evaluations());
+        print_result(&evaluator, &finished, &report);
+        return;
+    }
+
+    if args.iter().any(|arg| arg == "--surrogate") {
+        let run = run_recipe_a_surrogate(
+            &decoder,
+            &template,
+            &evaluator,
+            &cfg,
+            SurrogateConfig::default(),
+        )
+        .unwrap();
+        println!("mode=surrogate");
+        println!(
+            "surrogate_true={} surrogate_predicted={} surrogate_samples={} surrogate_fits={}",
+            run.report.true_evaluations,
+            run.report.predicted_evaluations,
+            run.report.samples,
+            run.report.model_fits
+        );
+        let (finished, report): (_, TerminalReport) =
+            finish_recipe_a(&decoder, &template, &mut evaluator, run.best, &operator, 20).unwrap();
+        println!("surrogate_total_evaluations={}", evaluator.evaluations());
+        print_result(&evaluator, &finished, &report);
         return;
     }
 

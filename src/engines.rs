@@ -13,6 +13,7 @@
 //! MIT-Apache and are recorded in `CREDIT.md` at the moment a file moves in.
 
 use std::borrow::Cow;
+use std::sync::{Arc, Mutex};
 
 use genetic_algorithms::chromosomes::ChromosomeLength;
 use genetic_algorithms::configuration::ProblemSolving;
@@ -445,6 +446,44 @@ pub struct MemeticRunResult {
     pub report: MemeticRunReport,
 }
 
+/// H6 screening schedule for the linear surrogate arm.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SurrogateConfig {
+    /// True evaluations before the model is allowed to predict.
+    pub warmup: usize,
+    /// Re-evaluate every this-many-th requested chromosome.
+    pub sample_every: usize,
+    /// Refit the linear model after this many accepted samples.
+    pub refit_every: usize,
+}
+
+impl Default for SurrogateConfig {
+    fn default() -> Self {
+        Self {
+            warmup: 16,
+            sample_every: 4,
+            refit_every: 8,
+        }
+    }
+}
+
+/// True and predicted work performed by the H6 surrogate arm.
+#[derive(Clone, Debug, Default)]
+pub struct SurrogateReport {
+    pub true_evaluations: usize,
+    pub predicted_evaluations: usize,
+    pub samples: usize,
+    pub model_fits: usize,
+}
+
+/// A Recipe A run whose fitness closure mixed true TMM evaluations with a
+/// linear surrogate.
+#[derive(Clone, Debug)]
+pub struct SurrogateRunResult {
+    pub best: RecipeAResult,
+    pub report: SurrogateReport,
+}
+
 /// What a terminal memetic finish did, for the Phase 1 scan certificate.
 #[derive(Clone, Debug)]
 pub struct TerminalReport {
@@ -709,6 +748,34 @@ fn build_recipe_a_ga(
     seed: Option<u64>,
     strategy: Option<&IslandStrategy>,
 ) -> Result<Ga<LayerChromosome>, String> {
+    build_recipe_a_ga_with_fitness(
+        cfg,
+        decoder,
+        template,
+        evaluator,
+        population,
+        generations,
+        seed,
+        strategy,
+        recipe_a_fitness(decoder, template, evaluator),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_recipe_a_ga_with_fitness<F>(
+    cfg: &RecipeAConfig,
+    _decoder: &Decoder,
+    _template: &StackTemplate,
+    _evaluator: &FitnessEvaluator,
+    population: Option<Population<LayerChromosome>>,
+    generations: usize,
+    seed: Option<u64>,
+    strategy: Option<&IslandStrategy>,
+    fitness: F,
+) -> Result<Ga<LayerChromosome>, String>
+where
+    F: Fn(&[KeyGene]) -> f64 + Send + Sync + Clone + 'static,
+{
     let init_width = cfg.max_layers;
     let init_fn = move |genes: usize, _alleles: Option<&[KeyGene]>| -> Vec<KeyGene> {
         let mut rng = make_rng();
@@ -721,7 +788,6 @@ fn build_recipe_a_ga(
     // zero function). `Population::fitness_calculation` only evaluates NaN
     // fitness, so without this rebinding an island generation would silently
     // keep every chromosome at fitness 0.
-    let fitness = recipe_a_fitness(decoder, template, evaluator);
     let mut population = population;
     if let Some(population) = population.as_mut() {
         for chromosome in &mut population.chromosomes {
@@ -1122,6 +1188,268 @@ pub fn run_recipe_a_illuminated(
         },
         archive,
         generations: cfg.generations,
+    })
+}
+
+struct SurrogateState {
+    dim: usize,
+    config: SurrogateConfig,
+    samples: Vec<(Vec<f64>, f64)>,
+    coefficients: Option<Vec<f64>>,
+    calls: usize,
+    true_evaluations: usize,
+    predicted_evaluations: usize,
+    model_fits: usize,
+}
+
+impl SurrogateState {
+    fn new(dim: usize, config: SurrogateConfig) -> Self {
+        Self {
+            dim,
+            config,
+            samples: Vec::new(),
+            coefficients: None,
+            calls: 0,
+            true_evaluations: 0,
+            predicted_evaluations: 0,
+            model_fits: 0,
+        }
+    }
+
+    fn next_is_true(&self) -> bool {
+        self.true_evaluations < self.config.warmup
+            || self.coefficients.is_none()
+            || self.calls.is_multiple_of(self.config.sample_every)
+    }
+
+    fn predict(&self, features: &[f64]) -> f64 {
+        if let Some(coefficients) = &self.coefficients {
+            let value = coefficients
+                .iter()
+                .zip(features)
+                .map(|(coefficient, feature)| coefficient * feature)
+                .sum::<f64>();
+            value.max(0.0)
+        } else {
+            let mean = self.samples.iter().map(|(_, merit)| *merit).sum::<f64>()
+                / self.samples.len().max(1) as f64;
+            mean.max(0.0)
+        }
+    }
+
+    fn add_sample(&mut self, features: Vec<f64>, merit: f64) {
+        if merit.is_finite() {
+            self.samples.push((features, merit));
+        }
+        if self.samples.len() > self.dim
+            && self
+                .samples
+                .len()
+                .is_multiple_of(self.config.refit_every.max(1))
+        {
+            if let Some(coefficients) = fit_linear(&self.samples, self.dim) {
+                self.coefficients = Some(coefficients);
+                self.model_fits += 1;
+            }
+        }
+    }
+}
+
+fn fit_linear(samples: &[(Vec<f64>, f64)], dim: usize) -> Option<Vec<f64>> {
+    if samples.len() < dim + 1 {
+        return None;
+    }
+    let mut augmented = vec![vec![0.0; dim + 1]; dim];
+    for (features, merit) in samples {
+        if features.len() != dim {
+            continue;
+        }
+        for row in 0..dim {
+            for column in 0..dim {
+                augmented[row][column] += features[row] * features[column];
+            }
+            augmented[row][dim] += features[row] * merit;
+        }
+    }
+    // Ridge term keeps the normal equations solvable when the population has
+    // not yet spanned every feature direction.
+    for (index, row) in augmented.iter_mut().enumerate() {
+        row[index] += 1e-9;
+    }
+
+    for column in 0..dim {
+        let pivot = (column..dim).max_by(|&a, &b| {
+            augmented[a][column]
+                .abs()
+                .total_cmp(&augmented[b][column].abs())
+        })?;
+        if augmented[pivot][column].abs() < 1e-12 {
+            return None;
+        }
+        augmented.swap(column, pivot);
+        let scale = augmented[column][column];
+        for value in &mut augmented[column][column..=dim] {
+            *value /= scale;
+        }
+        let pivot_row = augmented[column].clone();
+        for (row, values) in augmented.iter_mut().enumerate().take(dim) {
+            if row == column {
+                continue;
+            }
+            let factor = values[column];
+            for (value, pivot) in values[column..=dim]
+                .iter_mut()
+                .zip(&pivot_row[column..=dim])
+            {
+                *value -= factor * pivot;
+            }
+        }
+    }
+    Some((0..dim).map(|row| augmented[row][dim]).collect())
+}
+
+fn surrogate_features(
+    decoder: &Decoder,
+    stack: &navette::smatrix::synthesis::structure::DesignStack,
+    max_layers: usize,
+) -> Vec<f64> {
+    let films = stack.films();
+    let total = films.iter().map(|film| film.d_nm).sum::<f64>();
+    let min = films
+        .iter()
+        .map(|film| film.d_nm)
+        .reduce(f64::min)
+        .unwrap_or(0.0);
+    let materials = &decoder.pool().materials();
+    let mut counts = vec![0.0; materials.len()];
+    for film in films {
+        let base = film
+            .label
+            .as_deref()
+            .unwrap_or_else(|| film.material.split('#').next().unwrap_or(&film.material));
+        if let Some(index) = materials
+            .iter()
+            .position(|material| material.name() == base)
+        {
+            counts[index] += 1.0;
+        }
+    }
+    let count = films.len().max(1) as f64;
+    let mut features = vec![
+        1.0,
+        films.len() as f64 / max_layers.max(1) as f64,
+        total / 1000.0,
+        (total / count) / 300.0,
+        min / 300.0,
+    ];
+    features.extend(counts.into_iter().map(|value| value / count));
+    features
+}
+
+/// Run fixed-width Recipe A with a linear surrogate screening the fitness
+/// calls (H6).
+///
+/// The first `warmup` candidates and every `sample_every`-th later candidate
+/// are evaluated by navette; the rest receive the current linear prediction.
+/// The returned best design is always re-evaluated by navette, so a model
+/// hallucination cannot become the reported merit. This is a screening arm,
+/// not a trained GP or Bayesian optimiser.
+pub fn run_recipe_a_surrogate(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    cfg: &RecipeAConfig,
+    surrogate: SurrogateConfig,
+) -> Result<SurrogateRunResult, String> {
+    validate_recipe_a(cfg)?;
+    if surrogate.warmup == 0 || surrogate.sample_every == 0 || surrogate.refit_every == 0 {
+        return Err("surrogate warmup/sample/refit intervals must be >= 1".into());
+    }
+    template.check_grammar(decoder.pool(), decoder.grammar())?;
+
+    let dim = 5 + decoder.pool().len();
+    let max_layers = cfg.max_layers;
+    let state = Arc::new(Mutex::new(SurrogateState::new(dim, surrogate)));
+    let state_for_fitness = Arc::clone(&state);
+    let decoder_for_fitness = decoder.clone();
+    let template_for_fitness = template.clone();
+    let evaluator_for_fitness = evaluator.clone();
+    let fitness = move |dna: &[KeyGene]| -> f64 {
+        let genome = Genome::from(
+            dna.iter()
+                .map(|gene| LayerGene::new(gene.material, gene.thickness, gene.presence))
+                .collect::<Vec<_>>(),
+        );
+        let Ok(decoded) = decoder_for_fitness.decode(&genome) else {
+            return f64::INFINITY;
+        };
+        let Ok(stack) = checked_assemble(&decoder_for_fitness, &template_for_fitness, &decoded)
+        else {
+            return f64::INFINITY;
+        };
+        let features = surrogate_features(&decoder_for_fitness, &stack, max_layers);
+        let mut state = match state_for_fitness.lock() {
+            Ok(state) => state,
+            Err(_) => return f64::INFINITY,
+        };
+        state.calls += 1;
+        if state.next_is_true() {
+            state.true_evaluations += 1;
+            let merit = evaluator_for_fitness
+                .evaluate(&stack)
+                .unwrap_or(f64::INFINITY);
+            state.add_sample(features, merit);
+            merit
+        } else {
+            state.predicted_evaluations += 1;
+            state.predict(&features)
+        }
+    };
+
+    let mut ga = build_recipe_a_ga_with_fitness(
+        cfg,
+        decoder,
+        template,
+        evaluator,
+        None,
+        cfg.generations,
+        cfg.seed,
+        None,
+        fitness,
+    )?;
+    ga.run().map_err(|e| e.to_string())?;
+    let best = ga
+        .population
+        .chromosomes
+        .iter()
+        .min_by(|a, b| a.fitness().total_cmp(&b.fitness()))
+        .cloned()
+        .ok_or_else(|| "surrogate Recipe A produced an empty population".to_string())?;
+    let best_genome = best.to_genome();
+    let decoded = decoder.decode(&best_genome).map_err(|e| e.to_string())?;
+    let stack = checked_assemble(decoder, template, &decoded)?;
+    let merit = evaluator.evaluate(&stack)?;
+    if !merit.is_finite() {
+        return Err("surrogate Recipe A's final design is not finite".into());
+    }
+    let report = {
+        let state = state.lock().map_err(|_| "surrogate state poisoned")?;
+        SurrogateReport {
+            true_evaluations: state.true_evaluations + 1,
+            predicted_evaluations: state.predicted_evaluations,
+            samples: state.samples.len(),
+            model_fits: state.model_fits,
+        }
+    };
+    Ok(SurrogateRunResult {
+        best: RecipeAResult {
+            best_genome,
+            decoded,
+            stack,
+            merit,
+            generations: cfg.generations,
+        },
+        report,
     })
 }
 
@@ -2969,6 +3297,60 @@ mod tests {
         assert_eq!(report.final_merit, finished.merit);
         assert_eq!(ev.evaluate(&finished.stack).unwrap(), finished.merit);
         assert!(report.min_thickness_nm >= 0.0);
+    }
+
+    #[test]
+    fn surrogate_screen_mixes_true_and_predicted_evaluations() {
+        let pool = MaterialPool::new(vec![
+            Material::new("H", 20.0, 200.0).unwrap(),
+            Material::new("L", 10.0, 150.0).unwrap(),
+        ])
+        .unwrap();
+        let decoder = Decoder::without_constraints(pool).unwrap();
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0),
+            constant("substrate", 1.52, 0.0),
+            vec![constant("H", 2.2, 0.0), constant("L", 1.46, 0.0)],
+        )
+        .unwrap();
+        let evaluator = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            zero_spec(),
+            EvaluatorOptions {
+                clamp_min_nm: 20.0,
+                clamp_max_nm: 150.0,
+                ..EvaluatorOptions::default()
+            },
+        )
+        .unwrap();
+        let cfg = RecipeAConfig {
+            population_size: 12,
+            generations: 5,
+            max_layers: 4,
+            mutation_sigma: 0.2,
+            seed: Some(51),
+        };
+        let result = run_recipe_a_surrogate(
+            &decoder,
+            &template,
+            &evaluator,
+            &cfg,
+            SurrogateConfig {
+                warmup: 4,
+                sample_every: 2,
+                refit_every: 2,
+            },
+        )
+        .unwrap();
+        assert!(result.best.merit.is_finite());
+        assert!(result.report.predicted_evaluations > 0);
+        assert!(result.report.true_evaluations > 0);
+        assert!(result.report.model_fits > 0);
+        assert_eq!(
+            evaluator.evaluate(&result.best.stack).unwrap(),
+            result.best.merit
+        );
     }
 
     #[test]
