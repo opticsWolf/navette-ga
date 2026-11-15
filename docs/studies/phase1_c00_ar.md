@@ -103,9 +103,10 @@ schedule table and caveat.
 classical random-start/LM control and H1 at the same solver-evaluation count.
 With `--h0-repeats 5` the five-seed medians were H0 `18.9000 %` versus H1
 `3.3849 %` at 2k evaluations, and H0 `6.7780 %` versus H1 `3.3391 %` at 20k.
-H1 won all five seeds at both budgets. This is one target and a fixed-seed
-sample; see the Phase 2 ledger for the caveat and the missing statistical
-test.
+H1 won all five seeds at both budgets. The tie-corrected normal-approximation
+rank-sum p-values were 0.0082 at 2k and 0.0053 at 20k; these are not exact
+because the H0 samples contain ties. This is one target and a fixed-seed
+sample; see the Phase 2 ledger for the multiplicity caveat.
 
 ## Not covered
 

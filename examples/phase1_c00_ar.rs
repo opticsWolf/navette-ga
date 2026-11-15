@@ -25,6 +25,7 @@ use navette_ga::engines::{
     MemeticSchedule, RecipeAConfig, TerminalReport,
 };
 use navette_ga::materials::{decoder_pool, load_library, stack_template, ThicknessBounds};
+use navette_ga::study::mann_whitney_u;
 
 fn table(name: &str, n: f64, wavelengths: &[f64]) -> MaterialDef {
     MaterialDef {
@@ -202,6 +203,11 @@ fn main() {
             "ga_median_merit={:.9} ga_median_avg_R={:.9}",
             median(&mut ga_merit),
             median(&mut ga_r)
+        );
+        let rank_sum = mann_whitney_u(&h0_merit, &ga_merit).unwrap();
+        println!(
+            "rank_sum_u={:.6} p_value={:.9} exact={}",
+            rank_sum.u, rank_sum.p_value, rank_sum.exact
         );
         return;
     }

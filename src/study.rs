@@ -390,6 +390,201 @@ impl Campaign {
     }
 }
 
+/// Exact or normal-approximation Mann–Whitney U result for two samples.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RankSumReport {
+    /// U statistic for the first sample.
+    pub u: f64,
+    /// Two-sided p-value.
+    pub p_value: f64,
+    /// True when the exact permutation distribution was used.
+    pub exact: bool,
+    pub n_a: usize,
+    pub n_b: usize,
+}
+
+/// Two-sided Mann–Whitney U test.
+///
+/// Small, tie-free samples use the exact permutation distribution; larger or
+/// tied samples use the normal approximation with the standard tie correction.
+/// This is a reporting primitive, not a substitute for a pre-registered
+/// multiplicity plan: callers with several comparisons should pass the
+/// resulting p-values through [`holm_bonferroni`].
+pub fn mann_whitney_u(a: &[f64], b: &[f64]) -> Result<RankSumReport, String> {
+    if a.is_empty() || b.is_empty() {
+        return Err("Mann-Whitney needs two non-empty samples".into());
+    }
+    if a.iter().chain(b).any(|value| !value.is_finite()) {
+        return Err("Mann-Whitney samples must be finite".into());
+    }
+
+    let n_a = a.len();
+    let n_b = b.len();
+    let total = n_a + n_b;
+    let mut combined: Vec<(f64, usize)> = a
+        .iter()
+        .map(|&value| (value, 0usize))
+        .chain(b.iter().map(|&value| (value, 1usize)))
+        .collect();
+    combined.sort_by(|left, right| left.0.total_cmp(&right.0));
+
+    let mut ranks = vec![0.0; total];
+    let mut tie_terms = 0.0;
+    let mut has_ties = false;
+    let mut start = 0usize;
+    while start < total {
+        let mut end = start + 1;
+        while end < total && combined[end].0 == combined[start].0 {
+            end += 1;
+        }
+        let rank = (start + 1 + end) as f64 / 2.0;
+        if end - start > 1 {
+            has_ties = true;
+            let t = (end - start) as f64;
+            tie_terms += t.powi(3) - t;
+        }
+        for slot in ranks.iter_mut().take(end).skip(start) {
+            *slot = rank;
+        }
+        start = end;
+    }
+
+    let rank_sum_a: f64 = combined
+        .iter()
+        .zip(&ranks)
+        .filter(|(entry, _)| entry.1 == 0)
+        .map(|(_, rank)| *rank)
+        .sum();
+    let u = rank_sum_a - (n_a * (n_a + 1)) as f64 / 2.0;
+    let mean = (n_a * n_b) as f64 / 2.0;
+
+    let exact_possible =
+        !has_ties && n_a * n_b <= 100 && total <= 20 && binomial(total, n_a.min(n_b)) <= 100_000;
+    let p_value = if exact_possible {
+        // Enumerate rank assignments for the smaller sample. The distribution
+        // is symmetric, so the p-value does not depend on which sample is
+        // called "small".
+        let n_small = n_a.min(n_b);
+        let observed = if n_a <= n_b {
+            u
+        } else {
+            (n_a * n_b) as f64 - u
+        };
+        let mut count = 0u64;
+        let mut total_assignments = 0u64;
+        // Use a direct combination walk with the sample size captured.
+        #[allow(clippy::too_many_arguments)]
+        fn enumerate(
+            n_small: usize,
+            next_rank: usize,
+            left: usize,
+            last_rank: usize,
+            sum: usize,
+            mean: f64,
+            observed: f64,
+            count: &mut u64,
+            total: &mut u64,
+        ) {
+            if left == 0 {
+                *total += 1;
+                let u_small = sum as f64 - (n_small * (n_small + 1)) as f64 / 2.0;
+                if (u_small - mean).abs() + 1e-12 >= (observed - mean).abs() {
+                    *count += 1;
+                }
+                return;
+            }
+            let max_rank = last_rank - left + 1;
+            for rank in next_rank..=max_rank {
+                enumerate(
+                    n_small,
+                    rank + 1,
+                    left - 1,
+                    last_rank,
+                    sum + rank,
+                    mean,
+                    observed,
+                    count,
+                    total,
+                );
+            }
+        }
+        enumerate(
+            n_small,
+            1,
+            n_small,
+            total,
+            0,
+            mean,
+            observed,
+            &mut count,
+            &mut total_assignments,
+        );
+        count as f64 / total_assignments as f64
+    } else {
+        let n = total as f64;
+        let variance = (n_a * n_b) as f64 / 12.0 * ((n + 1.0) - tie_terms / (n * (n - 1.0)));
+        if variance <= 0.0 {
+            1.0
+        } else {
+            let z = (u - mean) / variance.sqrt();
+            2.0 * (1.0 - normal_cdf(z.abs()))
+        }
+    };
+
+    Ok(RankSumReport {
+        u,
+        p_value: p_value.clamp(0.0, 1.0),
+        exact: exact_possible,
+        n_a,
+        n_b,
+    })
+}
+
+fn binomial(n: usize, k: usize) -> u128 {
+    let k = k.min(n - k);
+    let mut out = 1u128;
+    for i in 0..k {
+        out = out * (n - i) as u128 / (i + 1) as u128;
+    }
+    out
+}
+
+fn normal_cdf(x: f64) -> f64 {
+    0.5 * (1.0 + erf(x / std::f64::consts::SQRT_2))
+}
+
+fn erf(x: f64) -> f64 {
+    // Abramowitz & Stegun 7.1.26, absolute error below 1.5e-7.
+    let sign = if x < 0.0 { -1.0 } else { 1.0 };
+    let x = x.abs();
+    let t = 1.0 / (1.0 + 0.3275911 * x);
+    let poly = (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t
+        + 0.254829592)
+        * t;
+    sign * (1.0 - poly * (-x * x).exp())
+}
+
+/// Holm–Bonferroni adjusted p-values, returned in the input order.
+pub fn holm_bonferroni(p_values: &[f64]) -> Result<Vec<f64>, String> {
+    if p_values
+        .iter()
+        .any(|p| !p.is_finite() || !(0.0..=1.0).contains(p))
+    {
+        return Err("Holm correction needs p-values in [0, 1]".into());
+    }
+    let m = p_values.len();
+    let mut order: Vec<usize> = (0..m).collect();
+    order.sort_by(|&a, &b| p_values[a].total_cmp(&p_values[b]));
+    let mut adjusted = vec![0.0; m];
+    let mut running = 0.0f64;
+    for (position, &index) in order.iter().enumerate() {
+        let value = (p_values[index] * (m - position) as f64).min(1.0);
+        running = running.max(value);
+        adjusted[index] = running;
+    }
+    Ok(adjusted)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -452,6 +647,34 @@ mod tests {
         assert_eq!(campaign.queued(), 1);
         assert_eq!(campaign.completed_count(), 1);
         assert_eq!(campaign.compact(), 0);
+    }
+
+    #[test]
+    fn mann_whitney_exact_and_tie_fallback() {
+        let report =
+            mann_whitney_u(&[1.0, 2.0, 3.0, 4.0, 5.0], &[6.0, 7.0, 8.0, 9.0, 10.0]).unwrap();
+        assert!(report.exact);
+        assert_eq!(report.u, 0.0);
+        assert!((report.p_value - 2.0 / 252.0).abs() < 1e-12);
+        assert_eq!(report.n_a, 5);
+        assert_eq!(report.n_b, 5);
+
+        let tied = mann_whitney_u(&[1.0, 2.0, 2.0], &[2.0, 3.0, 4.0]).unwrap();
+        assert!(!tied.exact);
+        assert!((0.0..=1.0).contains(&tied.p_value));
+
+        assert!(mann_whitney_u(&[], &[1.0]).is_err());
+        assert!(mann_whitney_u(&[1.0, f64::NAN], &[2.0]).is_err());
+    }
+
+    #[test]
+    fn holm_adjustment_is_monotone_and_order_preserving() {
+        let adjusted = holm_bonferroni(&[0.01, 0.04, 0.03]).unwrap();
+        assert!((adjusted[0] - 0.03).abs() < 1e-12);
+        assert!((adjusted[1] - 0.06).abs() < 1e-12);
+        assert!((adjusted[2] - 0.06).abs() < 1e-12);
+        assert!(holm_bonferroni(&[1.2]).is_err());
+        assert_eq!(holm_bonferroni(&[]).unwrap(), Vec::<f64>::new());
     }
 
     #[test]

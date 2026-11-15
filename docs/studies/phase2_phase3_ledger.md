@@ -10,7 +10,7 @@ repository, and every limitation is listed rather than inferred away.
 - `navette` local `dev_ga` at `c9e964d` (A1/A3, A2 introspection, public
   joint scan, and the core `ndarray` 0.16 lift).
 - `navette-ga` single crate, LGPL-3.0-or-later.
-- `cargo test --all-features`: **72 passed**.
+- `cargo test --all-features`: **74 passed**.
 - `cargo clippy --all-targets --all-features -- -D warnings`: clean.
 - `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features`: clean.
 - `navette` with `ga-introspect`: **801 passed, 1 ignored**.
@@ -228,6 +228,12 @@ the ordinary Recipe A GA. The C00 example reproduces this with
 | 20,000 | H0 | 126253.031531 | 6.7780 % | 20,005–20,285 | 0/5 |
 | 20,000 | H1 | 24196.228802 | 3.3391 % | 20,033 | **5/5** |
 
+The two-sided Mann–Whitney normal approximation with tie correction gives
+`p = 0.0082` at 2k and `p = 0.0053` at 20k. These are not exact p-values
+because the H0 samples contain ties (all five 20k runs reach the same local
+optimum); no multiplicity correction is applied because there is one pair.
+`study::holm_bonferroni` is available for the future H0–H7 family.
+
 On this fixture the classical control loses at both budgets; the H0 arm
 improves with more LM work but does not catch the GA. H0's random 32-layer
 starts are a deliberately hard version of the control, and all five H0 seeds
@@ -236,8 +242,9 @@ the strong "H0 wins at 5–10 layers" risk, not a universal claim. The H1
 plateau also shows that more evaluations alone do not improve this fixed-width
 search after it converges.
 
-The repeat runner is fixed-seed only: no rank-sum test, multiplicity
-correction, or ERT reporting is claimed yet.
+The repeat runner is fixed-seed; the rank-sum primitive is normal-approximate
+when ties are present, and ERT reporting and the full H0–H7 multiplicity plan
+are not claimed yet.
 
 ## Phase 2 — S4/F1 archive and S6 split
 
