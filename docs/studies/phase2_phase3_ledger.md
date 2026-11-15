@@ -10,7 +10,7 @@ repository, and every limitation is listed rather than inferred away.
 - `navette` local `dev_ga` at `c9e964d` (A1/A3, A2 introspection, public
   joint scan, and the core `ndarray` 0.16 lift).
 - `navette-ga` single crate, LGPL-3.0-or-later.
-- `cargo test --all-features`: **79 passed**.
+- `cargo test --all-features`: **80 passed**.
 - `cargo clippy --all-targets --all-features -- -D warnings`: clean.
 - `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features`: clean.
 - `navette` with `ga-introspect`: **801 passed, 1 ignored**.
@@ -279,11 +279,14 @@ returns the counter with the result.
 
 `bench::run_comparison_campaign` applies a fixed seed list to every arm
 (`recipe`, `h0`, and `vl` seed fields) and returns `CampaignArm` records with
-best/median merit and median evaluations. This is the multi-seed campaign
-loop, not an ERT report: a target merit and success rule are still needed for
-expected running time, and the family-level multiplicity correction is not
-applied here. The dispatch test runs all eight arms on the small fixture; the
-campaign test runs H0/H1/H6 over two seeds.
+best/median merit and median evaluations. `bench::expected_running_time`
+turns that campaign into a fixed-target ERT table: a run succeeds when its
+final merit is `<= target_merit`, and `ert = sum(evaluations over all runs) /
+successes` censors unsuccessful runs at their observed length. Arms with no
+success report `None`. This is still not a family multiplicity correction;
+the dispatch test runs all eight arms on the small fixture, the campaign test
+runs H0/H1/H6 over two seeds, and the ERT test checks the all-success and
+no-success cases.
 
 ## Phase 2 — H0 control
 
@@ -329,8 +332,8 @@ plateau also shows that more evaluations alone do not improve this fixed-width
 search after it converges.
 
 The repeat runner is fixed-seed; the rank-sum primitive is normal-approximate
-when ties are present, and ERT reporting and the full H0–H7 multiplicity plan
-are not claimed yet.
+when ties are present. The campaign has a fixed-target ERT report, but the
+full H0–H7 multiplicity plan is not claimed yet.
 
 ## Phase 3 — H6 linear surrogate screen
 
@@ -422,8 +425,8 @@ problem uses the same decoder/template/evaluator as the GA, so a solver is
 measured on the same physics.
 
 Limitations: the kurobako registration is a problem definition, and the
-dispatcher/campaign loop is not yet an ERT report (no target success rule or
-family multiplicity correction); the archive illumination is not selection;
+dispatcher/campaign loop has a fixed-target ERT but no family multiplicity
+correction; the archive illumination is not selection;
 the C00 depth bake is a negative scale signal; the filter depth bake is one
 target and a 5k LM cap; the 40-layer filter is a seeded stack plus LM, not a
 GA discovery; the equal-budget H0/H1 result is five seeds on one target; the

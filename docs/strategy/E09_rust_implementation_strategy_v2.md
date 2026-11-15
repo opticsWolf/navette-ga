@@ -27,7 +27,7 @@ amendments are implemented by the owner, never requested.*
   `cycle::joint_needle_scan` and the A2 merit gradient (`d9faa79`); `c9e964d` lifts the core to `ndarray` 0.16 so navette, `moors`, and `navette-ga` share one array major.
 - **`navette-ga`:** G2 decoder, G1 bridge, A1 memetic operator, fixed and
   variable-length Recipe A, the Phase 2 ring, and the new Phase 2/3 modules
-  (`moors_split`, `qd`, `study`, `bench`). Full suite: **79 tests**.
+  (`moors_split`, `qd`, `study`, `bench`). Full suite: **80 tests**.
 - **Phase 1 exit artifact:** G3 rung-2 material loader; terminal LM + needle
   finish with Lamarckian write-back and actual-trial scan certificate;
   C00-class ledger at `docs/studies/phase1_c00_ar.md` (8 layers, avg
@@ -69,7 +69,9 @@ amendments are implemented by the owner, never requested.*
   (`run_recipe_a_surrogate`); H7's variable-length seeded/mined-motif fallback
   (`run_recipe_a_vl_seeded`); and `bench::run_comparison_arm` /
   `run_comparison_campaign` dispatch the H0–H7 registry over fixed seed lists.
-  The H7 diffusion proposal and ERT reporting are not implemented.
+  `bench::expected_running_time` adds a fixed-target censored ERT report. The
+  H7 diffusion proposal and the family multiplicity correction are not
+  implemented.
 - **Release gate:** A1/A3/A2 are not in published navette 0.10.0. The bridge
   is local-path-only until a navette release carries them; `cargo publish` is
   expected to fail verification meanwhile.
@@ -77,7 +79,7 @@ amendments are implemented by the owner, never requested.*
   navette-native A4 (per-material bounds and insert/migrate grammar hook), the
   H7 diffusion proposal, a GA-discovered Recipe B filter (the seeded 40-layer
   artifact and the filter depth bake exist), and the multi-seed equal-compute
-  H0/H1/H3 campaign with ERT and family multiplicity correction; the
+  H0/H1/H3 campaign with family multiplicity correction; the
   released-navette gate remains.
 
 ## 0. What navette already is (and why the strategy collapses around it)

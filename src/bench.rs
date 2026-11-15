@@ -451,6 +451,71 @@ impl CampaignArm {
     }
 }
 
+/// Fixed-target expected-running-time summary for one arm.
+///
+/// `ert` is the censored estimate `sum(evaluations over all runs) / successes`:
+/// a run that does not reach the target still contributes its full observed
+/// evaluation count. This is an evaluation-count proxy, not wall time, and it
+/// is only comparable when the arms use similar per-evaluation costs.
+#[derive(Clone, Debug)]
+pub struct ErtArm {
+    pub arm: ComparisonArm,
+    pub trials: usize,
+    pub successes: usize,
+    pub total_evaluations: usize,
+    pub ert: Option<f64>,
+}
+
+impl ErtArm {
+    pub fn success_rate(&self) -> f64 {
+        if self.trials == 0 {
+            0.0
+        } else {
+            self.successes as f64 / self.trials as f64
+        }
+    }
+}
+
+/// Fixed-target ERT table for a campaign.
+#[derive(Clone, Debug)]
+pub struct ErtReport {
+    pub target_merit: f64,
+    pub arms: Vec<ErtArm>,
+}
+
+/// Compute fixed-target ERT from a campaign.
+///
+/// A run succeeds when its final merit is `<= target_merit` (minimization).
+/// Arms with no success report `None`, not an infinite or fabricated value.
+pub fn expected_running_time(
+    campaign: &[CampaignArm],
+    target_merit: f64,
+) -> Result<ErtReport, String> {
+    if !target_merit.is_finite() {
+        return Err("ERT target merit must be finite".into());
+    }
+    let arms = campaign
+        .iter()
+        .map(|entry| {
+            let successes = entry
+                .runs
+                .iter()
+                .filter(|run| run.result.merit <= target_merit)
+                .count();
+            let total_evaluations = entry.runs.iter().map(|run| run.evaluations).sum();
+            let ert = (successes > 0).then_some(total_evaluations as f64 / successes as f64);
+            ErtArm {
+                arm: entry.arm,
+                trials: entry.runs.len(),
+                successes,
+                total_evaluations,
+                ert,
+            }
+        })
+        .collect();
+    Ok(ErtReport { target_merit, arms })
+}
+
 /// Run a fixed set of arms over a fixed set of seeds.
 ///
 /// The seed is written into every arm configuration that has a seed field
@@ -756,5 +821,39 @@ mod tests {
             &options,
         )
         .is_err());
+    }
+
+    #[test]
+    fn ert_report_counts_fixed_target_successes() {
+        let problem = problem();
+        let mut evaluator = problem.evaluator.clone();
+        let options = comparison_options(&problem);
+        let campaign = run_comparison_campaign(
+            &problem.decoder,
+            &problem.template,
+            &mut evaluator,
+            &[ComparisonArm::H0, ComparisonArm::H1],
+            &[101, 202],
+            &options,
+        )
+        .unwrap();
+
+        let all = expected_running_time(&campaign, f64::MAX).unwrap();
+        assert_eq!(all.target_merit, f64::MAX);
+        for arm in &all.arms {
+            assert_eq!(arm.trials, 2);
+            assert_eq!(arm.successes, 2);
+            assert_eq!(arm.success_rate(), 1.0);
+            assert!(arm.ert.unwrap() > 0.0);
+        }
+
+        let none = expected_running_time(&campaign, -1.0).unwrap();
+        for arm in &none.arms {
+            assert_eq!(arm.successes, 0);
+            assert!(arm.ert.is_none());
+            assert_eq!(arm.success_rate(), 0.0);
+        }
+
+        assert!(expected_running_time(&campaign, f64::NAN).is_err());
     }
 }
