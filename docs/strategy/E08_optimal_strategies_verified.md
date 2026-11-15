@@ -41,7 +41,7 @@ crate claims ("only X does Y") mean "among surveyed crates", not the world.*
   MOME archive and S4-lite illuminated run, the S6 `moors` split, the H0
   control, I1 cross-island multi-parent crossover, the G7 campaign object, and
   the G8 kurobako problem/H0-H7 registry are implemented and tested. Full
-  suite: 66 tests. Navette-native A4, H6/H7 dispatch, and the 40-layer
+  suite: 69 tests. Navette-native A4, H6/H7 dispatch, and the 40-layer
   production bake remain. Details: `docs/studies/phase2_phase3_ledger.md`.
 - **Review status:** 21 findings / 11 gaps / 11 risks (round 1: 19/10/10; round 2 adds
   E15/E16/G11/R11). S1–S10 remain the strategy spine; certification is the C2

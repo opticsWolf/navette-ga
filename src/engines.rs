@@ -224,6 +224,33 @@ impl Default for RecipeAConfig {
     }
 }
 
+/// Optional mid-loop needle schedule for Recipe A (G4/S2).
+///
+/// Every `interval` generations, the `top` best chromosomes are decoded,
+/// assembled, passed through a [`MemeticOperator`], and written back into the
+/// same fixed-width DNA when the refined stack is better and still satisfies
+/// the decoder's A4 contract. The terminal finish remains a separate call; a
+/// schedule does not replace the final scan certificate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MemeticSchedule {
+    /// Apply one memetic pass every this many generations.
+    pub interval: usize,
+    /// Number of best chromosomes refined in each pass.
+    pub top: usize,
+    /// Maximum needle insertions per chromosome per pass.
+    pub max_insertions: usize,
+}
+
+impl Default for MemeticSchedule {
+    fn default() -> Self {
+        Self {
+            interval: 10,
+            top: 4,
+            max_insertions: 2,
+        }
+    }
+}
+
 /// Phase 2 island policy for Recipe A.
 ///
 /// The loop runs every island independently, then a ring migration every
@@ -369,6 +396,50 @@ pub struct RecipeAResult {
     pub generations: usize,
 }
 
+/// Work performed by the optional mid-loop memetic schedule.
+#[derive(Clone, Debug, Default)]
+pub struct MemeticRunReport {
+    /// Number of scheduled passes actually executed.
+    pub passes: usize,
+    /// Chromosomes handed to the operator.
+    pub refined: usize,
+    /// Chromosomes whose write-back was accepted.
+    pub improved: usize,
+    /// Accepted needle insertions across all passes.
+    pub insertions: usize,
+    /// Spectral scans run by the operator across all passes.
+    pub scans: usize,
+    /// Refinements whose operator merit did not beat the starting merit.
+    pub prediction_rejected: usize,
+    /// Refinements rejected by A4 validation or the fixed-width write-back.
+    pub write_back_rejected: usize,
+    /// Refinements whose canonical write-back re-scored no better.
+    pub merit_rejected: usize,
+    /// Wall time spent advancing the GA, in seconds.
+    pub ga_seconds: f64,
+    /// Wall time spent in scheduled memetic passes, in seconds.
+    pub memetic_seconds: f64,
+}
+
+impl MemeticRunReport {
+    /// Fraction of the run spent in the mid-loop memetic schedule.
+    pub fn memetic_share(&self) -> f64 {
+        let total = self.ga_seconds + self.memetic_seconds;
+        if total > 0.0 {
+            self.memetic_seconds / total
+        } else {
+            0.0
+        }
+    }
+}
+
+/// A Recipe A run plus its mid-loop memetic bookkeeping.
+#[derive(Clone, Debug)]
+pub struct MemeticRunResult {
+    pub best: RecipeAResult,
+    pub report: MemeticRunReport,
+}
+
 /// What a terminal memetic finish did, for the Phase 1 scan certificate.
 #[derive(Clone, Debug)]
 pub struct TerminalReport {
@@ -462,6 +533,8 @@ pub struct IslandRecipeResult {
     /// Mean pairwise L1 distance between island material histograms, in
     /// `[0, 1]`; zero means every island has the same material mix.
     pub homogenisation: f64,
+    /// Mid-loop memetic work, or all-zero when no schedule was supplied.
+    pub memetic: MemeticRunReport,
 }
 
 fn validate_recipe_a(cfg: &RecipeAConfig) -> Result<(), String> {
@@ -480,11 +553,30 @@ fn validate_recipe_a(cfg: &RecipeAConfig) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_memetic_schedule(
+    cfg: &RecipeAConfig,
+    schedule: &MemeticSchedule,
+) -> Result<(), String> {
+    if schedule.interval == 0 {
+        return Err("memetic schedule interval must be >= 1".into());
+    }
+    if schedule.top == 0 || schedule.top > cfg.population_size {
+        return Err(format!(
+            "memetic schedule top must be in 1..={}; got {}",
+            cfg.population_size, schedule.top
+        ));
+    }
+    if schedule.max_insertions == 0 {
+        return Err("memetic schedule max_insertions must be >= 1".into());
+    }
+    Ok(())
+}
+
 fn recipe_a_fitness(
     decoder: &Decoder,
     template: &StackTemplate,
     evaluator: &FitnessEvaluator,
-) -> impl Fn(&[KeyGene]) -> f64 + Send + Sync + 'static {
+) -> impl Fn(&[KeyGene]) -> f64 + Send + Sync + Clone + 'static {
     let decoder = decoder.clone();
     let template = template.clone();
     let evaluator = evaluator.clone();
@@ -519,6 +611,63 @@ fn checked_assemble(
     Ok(stack)
 }
 
+/// Encode a physical stack back into a fixed-width genome, then decode and
+/// assemble it again so the returned genome/stack pair is the canonical one.
+///
+/// This is the one Lamarckian write-back used by both the terminal finish and
+/// the mid-loop schedule. It preserves material identity by pool name (the
+/// base label before `#`), and it refuses a stack that grows past `width`.
+fn write_back_stack(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    stack: &navette::smatrix::synthesis::structure::DesignStack,
+    width: usize,
+) -> Result<
+    (
+        Genome,
+        DecodedStack,
+        navette::smatrix::synthesis::structure::DesignStack,
+    ),
+    String,
+> {
+    let films = stack
+        .films()
+        .iter()
+        .map(|film| {
+            let pool_name = film
+                .label
+                .as_deref()
+                .unwrap_or_else(|| film.material.split('#').next().unwrap_or(&film.material));
+            let index = decoder
+                .pool()
+                .materials()
+                .iter()
+                .position(|material| material.name() == pool_name)
+                .ok_or_else(|| {
+                    format!(
+                        "terminal stack film {:?} is not in the decoder pool",
+                        film.material
+                    )
+                })?;
+            Ok((index, film.d_nm))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let genome = decoder
+        .encode_films(&films, width)
+        .map_err(|error| error.to_string())?;
+    let decoded = decoder.decode(&genome).map_err(|e| e.to_string())?;
+    let canonical = checked_assemble(decoder, template, &decoded)?;
+    Ok((genome, decoded, canonical))
+}
+
+fn genome_to_dna(genome: &Genome) -> Vec<KeyGene> {
+    genome
+        .genes()
+        .iter()
+        .map(|gene| KeyGene::new(gene.material, gene.thickness, gene.presence))
+        .collect()
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_recipe_a_ga(
     cfg: &RecipeAConfig,
@@ -537,11 +686,24 @@ fn build_recipe_a_ga(
         (0..width).map(|_| KeyGene::random(&mut rng)).collect()
     };
 
+    // A supplied population was created outside this builder, so its
+    // chromosomes still hold `FitnessFnWrapper::default()` (the constant
+    // zero function). `Population::fitness_calculation` only evaluates NaN
+    // fitness, so without this rebinding an island generation would silently
+    // keep every chromosome at fitness 0.
+    let fitness = recipe_a_fitness(decoder, template, evaluator);
+    let mut population = population;
+    if let Some(population) = population.as_mut() {
+        for chromosome in &mut population.chromosomes {
+            chromosome.set_fitness_fn(fitness.clone());
+        }
+    }
+
     let mut builder = Ga::<LayerChromosome>::new()
         .with_chromosome_length(ChromosomeLength::Fixed(cfg.max_layers))
         .with_population_size(cfg.population_size)
         .with_initialization_fn(init_fn)
-        .with_fitness_fn(recipe_a_fitness(decoder, template, evaluator))
+        .with_fitness_fn(fitness)
         .with_selection_method(strategy.map_or(Selection::Tournament, |s| s.selection))
         .with_crossover_method(Crossover::Uniform)
         .with_mutation_method(Mutation::Gaussian(GaussianParams {
@@ -958,8 +1120,12 @@ fn run_recipe_a_islands_with_strategies(
     strategies: Option<&[IslandStrategy]>,
     constraints: Option<&[TribeConstraint]>,
     i1: Option<&I1Config>,
+    memetic: Option<(&MemeticOperator, &MemeticSchedule)>,
 ) -> Result<IslandRecipeResult, String> {
     validate_recipe_a(cfg)?;
+    if let Some((_, schedule)) = memetic {
+        validate_memetic_schedule(cfg, schedule)?;
+    }
     if let Some(strategies) = strategies {
         validate_island_strategies(strategies, islands.islands)?;
     }
@@ -1000,6 +1166,8 @@ fn run_recipe_a_islands_with_strategies(
         .collect();
     let mut migrations = 0;
     let mut crossovers = 0;
+    let mut memetic_report = MemeticRunReport::default();
+    let mut memetic_evaluator = memetic.map(|_| evaluator.clone());
 
     for generation in 0..cfg.generations {
         for (island, population) in populations.iter_mut().enumerate() {
@@ -1015,6 +1183,7 @@ fn run_recipe_a_islands_with_strategies(
                 Some(all) => tribe_decoder(decoder, &all[island])?,
                 None => decoder.clone(),
             };
+            let ga_started = std::time::Instant::now();
             let mut ga = build_recipe_a_ga(
                 cfg,
                 &island_decoder,
@@ -1027,6 +1196,31 @@ fn run_recipe_a_islands_with_strategies(
             )?;
             ga.run().map_err(|e| e.to_string())?;
             *population = ga.population.clone();
+            memetic_report.ga_seconds += ga_started.elapsed().as_secs_f64();
+            if let (Some((operator, schedule)), Some(ev)) = (memetic, memetic_evaluator.as_mut()) {
+                if (generation + 1) % schedule.interval == 0 {
+                    let memetic_started = std::time::Instant::now();
+                    let pass = memetic_pass(
+                        &island_decoder,
+                        template,
+                        ev,
+                        operator,
+                        population,
+                        schedule.top,
+                        schedule.max_insertions,
+                        cfg.max_layers,
+                    )?;
+                    memetic_report.memetic_seconds += memetic_started.elapsed().as_secs_f64();
+                    memetic_report.passes += 1;
+                    memetic_report.refined += pass.refined;
+                    memetic_report.improved += pass.improved;
+                    memetic_report.insertions += pass.insertions;
+                    memetic_report.scans += pass.scans;
+                    memetic_report.prediction_rejected += pass.prediction_rejected;
+                    memetic_report.write_back_rejected += pass.write_back_rejected;
+                    memetic_report.merit_rejected += pass.merit_rejected;
+                }
+            }
         }
         if (generation + 1) % islands.migration_interval == 0 {
             migrations += populations.len();
@@ -1088,6 +1282,7 @@ fn run_recipe_a_islands_with_strategies(
         migrants_per_event,
         crossovers,
         homogenisation,
+        memetic: memetic_report,
     })
 }
 
@@ -1154,34 +1349,7 @@ pub fn finish_recipe_a(
         .is_none_or(|report| report.termination.is_converged());
 
     let width = decoder.max_layers().max(result.best_genome.len());
-    let films = result
-        .stack
-        .films()
-        .iter()
-        .map(|film| {
-            let pool_name = film
-                .label
-                .as_deref()
-                .unwrap_or_else(|| film.material.split('#').next().unwrap_or(&film.material));
-            let index = decoder
-                .pool()
-                .materials()
-                .iter()
-                .position(|material| material.name() == pool_name)
-                .ok_or_else(|| {
-                    format!(
-                        "terminal stack film {:?} is not in the decoder pool",
-                        film.material
-                    )
-                })?;
-            Ok((index, film.d_nm))
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    let best_genome = decoder
-        .encode_films(&films, width)
-        .map_err(|error| error.to_string())?;
-    let decoded = decoder.decode(&best_genome).map_err(|e| e.to_string())?;
-    let stack = checked_assemble(decoder, template, &decoded)?;
+    let (best_genome, decoded, stack) = write_back_stack(decoder, template, &result.stack, width)?;
     // Certify the design that will be returned, not the pre-write-back stack:
     // `encode_films` clamps thicknesses into the decoder bounds and re-decoding
     // can repair an adjacency.
@@ -1236,6 +1404,170 @@ pub fn run_recipe_a_finished(
         operator,
         max_insertions,
     )
+}
+
+/// Refine the best `top` chromosomes in place and write improvements back.
+///
+/// A chromosome is replaced only when the memetic stack is legal, the
+/// canonical write-back is legal, and the re-evaluated merit is strictly
+/// better than the chromosome's current fitness. No population member is
+/// graded by the operator's prediction alone.
+#[allow(clippy::too_many_arguments)]
+fn memetic_pass(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &mut FitnessEvaluator,
+    operator: &MemeticOperator,
+    population: &mut Population<LayerChromosome>,
+    top: usize,
+    max_insertions: usize,
+    width: usize,
+) -> Result<MemeticRunReport, String> {
+    let mut report = MemeticRunReport::default();
+    if top == 0 || population.chromosomes.is_empty() {
+        return Ok(report);
+    }
+
+    let mut ranked: Vec<usize> = (0..population.chromosomes.len()).collect();
+    ranked.sort_by(|&a, &b| {
+        population.chromosomes[a]
+            .fitness()
+            .total_cmp(&population.chromosomes[b].fitness())
+    });
+
+    for index in ranked.into_iter().take(top) {
+        let current = population.chromosomes[index].fitness();
+        if !current.is_finite() {
+            continue;
+        }
+        let genome = population.chromosomes[index].to_genome();
+        let Ok(decoded) = decoder.decode(&genome) else {
+            continue;
+        };
+        let Ok(mut stack) = checked_assemble(decoder, template, &decoded) else {
+            continue;
+        };
+        let before = evaluator.evaluate(&stack)?;
+        let memetic = operator.apply(evaluator, &mut stack, max_insertions)?;
+        report.refined += 1;
+        report.scans += memetic.scans;
+        report.insertions += memetic.steps.len();
+        if !memetic.final_merit.is_finite() || memetic.final_merit >= before {
+            report.prediction_rejected += 1;
+            continue;
+        }
+        if decoder.validate_stack(&stack).is_err() || stack.films().len() > width {
+            report.write_back_rejected += 1;
+            continue;
+        }
+        let Ok((genome, _, canonical)) = write_back_stack(decoder, template, &stack, width) else {
+            report.write_back_rejected += 1;
+            continue;
+        };
+        let merit = evaluator.evaluate(&canonical)?;
+        if !merit.is_finite() || merit >= current {
+            report.merit_rejected += 1;
+            continue;
+        }
+        let mut chromosome = LayerChromosome::from_dna(genome_to_dna(&genome));
+        chromosome.set_fitness(merit);
+        population.chromosomes[index] = chromosome;
+        report.improved += 1;
+    }
+    Ok(report)
+}
+
+/// Run Recipe A with an optional mid-loop needle schedule (G4/S2).
+///
+/// This is the memetic arm: every `schedule.interval` generations, the best
+/// `schedule.top` chromosomes are refined by the same [`MemeticOperator`] the
+/// terminal finish uses, and an improving legal refinement is written back
+/// into the population before the next generation. The terminal finish is
+/// still required to establish the scan certificate.
+///
+/// The schedule is deliberately outside [`RecipeAConfig`]: the operator owns
+/// spectral inputs and a needle pool, so it cannot be passed through the
+/// plain configuration that island and H0 drivers share.
+pub fn run_recipe_a_memetic(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &mut FitnessEvaluator,
+    cfg: &RecipeAConfig,
+    operator: &MemeticOperator,
+    schedule: &MemeticSchedule,
+) -> Result<MemeticRunResult, String> {
+    validate_recipe_a(cfg)?;
+    validate_memetic_schedule(cfg, schedule)?;
+    template.check_grammar(decoder.pool(), decoder.grammar())?;
+
+    let mut population = initial_population(cfg, cfg.seed);
+    let mut report = MemeticRunReport::default();
+    for generation in 0..cfg.generations {
+        let seed = cfg.seed.map(|base| {
+            base.wrapping_add(((generation as u64).wrapping_mul(1009)).wrapping_add(7))
+        });
+        let ga_started = std::time::Instant::now();
+        let mut ga = build_recipe_a_ga(
+            cfg,
+            decoder,
+            template,
+            evaluator,
+            Some(population),
+            1,
+            seed,
+            None,
+        )?;
+        ga.run().map_err(|e| e.to_string())?;
+        population = ga.population.clone();
+        report.ga_seconds += ga_started.elapsed().as_secs_f64();
+
+        if (generation + 1) % schedule.interval == 0 {
+            let memetic_started = std::time::Instant::now();
+            let pass = memetic_pass(
+                decoder,
+                template,
+                evaluator,
+                operator,
+                &mut population,
+                schedule.top,
+                schedule.max_insertions,
+                cfg.max_layers,
+            )?;
+            report.memetic_seconds += memetic_started.elapsed().as_secs_f64();
+            report.passes += 1;
+            report.refined += pass.refined;
+            report.improved += pass.improved;
+            report.insertions += pass.insertions;
+            report.scans += pass.scans;
+            report.prediction_rejected += pass.prediction_rejected;
+            report.write_back_rejected += pass.write_back_rejected;
+            report.merit_rejected += pass.merit_rejected;
+        }
+    }
+
+    let best = population
+        .chromosomes
+        .iter()
+        .min_by(|a, b| a.fitness().total_cmp(&b.fitness()))
+        .cloned()
+        .ok_or_else(|| "Recipe A produced an empty population".to_string())?;
+    if !best.fitness().is_finite() {
+        return Err("Recipe A found no legal design".into());
+    }
+    let best_genome = best.to_genome();
+    let decoded = decoder.decode(&best_genome).map_err(|e| e.to_string())?;
+    let stack = checked_assemble(decoder, template, &decoded)?;
+    let merit = evaluator.evaluate(&stack)?;
+    Ok(MemeticRunResult {
+        best: RecipeAResult {
+            best_genome,
+            decoded,
+            stack,
+            merit,
+            generations: cfg.generations,
+        },
+        report,
+    })
 }
 
 fn validate_island_strategies(strategies: &[IslandStrategy], islands: usize) -> Result<(), String> {
@@ -1318,6 +1650,7 @@ pub fn run_recipe_a_tribes(
         Some(&tribes.strategies),
         Some(&tribes.constraints),
         None,
+        None,
     )
 }
 
@@ -1330,7 +1663,35 @@ pub fn run_recipe_a_islands(
     islands: &IslandRecipeConfig,
 ) -> Result<IslandRecipeResult, String> {
     run_recipe_a_islands_with_strategies(
-        decoder, template, evaluator, cfg, islands, None, None, None,
+        decoder, template, evaluator, cfg, islands, None, None, None, None,
+    )
+}
+
+/// Run the ring with a mid-loop memetic schedule on every island.
+///
+/// The schedule is applied independently to each island's population after
+/// its generation, before migration. The result's [`MemeticRunReport`] counts
+/// every island pass, so `passes` is normally
+/// `islands * floor(generations / interval)`.
+pub fn run_recipe_a_islands_memetic(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    cfg: &RecipeAConfig,
+    islands: &IslandRecipeConfig,
+    operator: &MemeticOperator,
+    schedule: &MemeticSchedule,
+) -> Result<IslandRecipeResult, String> {
+    run_recipe_a_islands_with_strategies(
+        decoder,
+        template,
+        evaluator,
+        cfg,
+        islands,
+        None,
+        None,
+        None,
+        Some((operator, schedule)),
     )
 }
 
@@ -1360,6 +1721,7 @@ pub fn run_recipe_a_i1(
         None,
         None,
         Some(i1),
+        None,
     )
 }
 
@@ -1379,6 +1741,7 @@ pub fn run_recipe_a_heterogeneous_islands(
         cfg,
         &heterogeneous.islands,
         Some(&heterogeneous.strategies),
+        None,
         None,
         None,
     )
@@ -1488,6 +1851,14 @@ fn build_vl_recipe_a_ga_with(
         Mutation::Deletion,
     ];
 
+    let fitness = recipe_a_fitness(decoder, template, evaluator);
+    let mut population = population;
+    if let Some(population) = population.as_mut() {
+        for chromosome in &mut population.chromosomes {
+            chromosome.set_fitness_fn(fitness.clone());
+        }
+    }
+
     let mut builder = Ga::<LayerChromosome>::new()
         .with_chromosome_length(ChromosomeLength::Variable {
             min: cfg.min_layers,
@@ -1495,7 +1866,7 @@ fn build_vl_recipe_a_ga_with(
         })
         .with_population_size(cfg.population_size)
         .with_initialization_fn(init_fn)
-        .with_fitness_fn(recipe_a_fitness(decoder, template, evaluator))
+        .with_fitness_fn(fitness)
         .with_selection_method(strategy.map_or(Selection::Tournament, |s| s.selection))
         .with_crossover_method(Crossover::VariableLength(AlignmentStrategy::Pad))
         .with_mutation_portfolio(mutations)
@@ -1821,6 +2192,7 @@ fn run_recipe_a_vl_islands_with_strategies(
         migrants_per_event,
         crossovers,
         homogenisation,
+        memetic: MemeticRunReport::default(),
     })
 }
 
@@ -2205,6 +2577,217 @@ mod tests {
         assert_eq!(report.final_merit, finished.merit);
         assert_eq!(ev.evaluate(&finished.stack).unwrap(), finished.merit);
         assert!(report.min_thickness_nm >= 0.0);
+    }
+
+    #[test]
+    fn supplied_population_is_rebound_to_the_real_fitness_function() {
+        let pool = MaterialPool::new(vec![
+            Material::new("H", 20.0, 200.0).unwrap(),
+            Material::new("L", 10.0, 150.0).unwrap(),
+        ])
+        .unwrap();
+        let decoder = Decoder::without_constraints(pool).unwrap();
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0),
+            constant("substrate", 1.52, 0.0),
+            vec![constant("H", 2.2, 0.0), constant("L", 1.46, 0.0)],
+        )
+        .unwrap();
+        let evaluator = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            zero_spec(),
+            EvaluatorOptions {
+                clamp_min_nm: 10.0,
+                clamp_max_nm: 150.0,
+                ..EvaluatorOptions::default()
+            },
+        )
+        .unwrap();
+        let cfg = RecipeAConfig {
+            population_size: 8,
+            generations: 1,
+            max_layers: 4,
+            mutation_sigma: 0.2,
+            seed: Some(26),
+        };
+        let population = initial_population(&cfg, cfg.seed);
+        assert!(population
+            .chromosomes
+            .iter()
+            .all(|chromosome| chromosome.fitness().is_nan()));
+
+        let mut ga = build_recipe_a_ga(
+            &cfg,
+            &decoder,
+            &template,
+            &evaluator,
+            Some(population),
+            1,
+            cfg.seed,
+            None,
+        )
+        .unwrap();
+        ga.run().unwrap();
+        let best = ga
+            .population
+            .chromosomes
+            .iter()
+            .min_by(|a, b| a.fitness().total_cmp(&b.fitness()))
+            .unwrap();
+        let decoded = decoder.decode(&best.to_genome()).unwrap();
+        let stack = checked_assemble(&decoder, &template, &decoded).unwrap();
+        assert!(best.fitness().is_finite());
+        assert!(best.fitness() > 0.0);
+        assert_eq!(best.fitness(), evaluator.evaluate(&stack).unwrap());
+    }
+
+    #[test]
+    fn mid_loop_memetic_schedule_runs_and_keeps_a_legal_best() {
+        let pool = MaterialPool::new(vec![
+            Material::new("H", 10.0, 200.0).unwrap(),
+            Material::new("L", 10.0, 150.0).unwrap(),
+        ])
+        .unwrap();
+        let decoder = Decoder::without_constraints(pool).unwrap();
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0),
+            constant("substrate", 1.52, 0.0),
+            vec![constant("H", 2.2, 0.0), constant("L", 1.46, 0.0)],
+        )
+        .unwrap();
+        let spec = zero_spec();
+        let mut evaluator = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            spec.clone(),
+            EvaluatorOptions {
+                clamp_min_nm: 10.0,
+                clamp_max_nm: 150.0,
+                ..EvaluatorOptions::default()
+            },
+        )
+        .unwrap();
+        let cfg = RecipeAConfig {
+            population_size: 8,
+            generations: 4,
+            max_layers: 20,
+            mutation_sigma: 0.2,
+            seed: Some(24),
+        };
+        let spectral = SpectralInputs::from_spec(&spec, &[Radians::ZERO], &[550.0]).unwrap();
+        let operator = MemeticOperator::new(
+            spectral,
+            navette::smatrix::synthesis::cycle::MaterialPool::new(),
+            NeedleCycleConfig {
+                max_needles: 2,
+                scan_step_nm: 10.0,
+                ..NeedleCycleConfig::default()
+            },
+        );
+        let schedule = MemeticSchedule {
+            interval: 2,
+            top: 2,
+            max_insertions: 1,
+        };
+        let result = run_recipe_a_memetic(
+            &decoder,
+            &template,
+            &mut evaluator,
+            &cfg,
+            &operator,
+            &schedule,
+        )
+        .unwrap();
+
+        assert_eq!(result.report.passes, 2);
+        assert!(result.report.refined > 0);
+        assert!(result.report.improved <= result.report.refined);
+        assert!((0.0..=1.0).contains(&result.report.memetic_share()));
+        assert!(result.best.merit.is_finite());
+        assert!(result.best.decoded.len() <= cfg.max_layers);
+        assert_eq!(
+            evaluator.evaluate(&result.best.stack).unwrap(),
+            result.best.merit
+        );
+
+        let bad = MemeticSchedule {
+            interval: 0,
+            top: 1,
+            max_insertions: 1,
+        };
+        assert!(
+            run_recipe_a_memetic(&decoder, &template, &mut evaluator, &cfg, &operator, &bad)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn island_memetic_schedule_runs_every_island() {
+        let pool = MaterialPool::new(vec![
+            Material::new("H", 10.0, 200.0).unwrap(),
+            Material::new("L", 10.0, 150.0).unwrap(),
+        ])
+        .unwrap();
+        let decoder = Decoder::without_constraints(pool).unwrap();
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0),
+            constant("substrate", 1.52, 0.0),
+            vec![constant("H", 2.2, 0.0), constant("L", 1.46, 0.0)],
+        )
+        .unwrap();
+        let spec = zero_spec();
+        let evaluator = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            spec.clone(),
+            EvaluatorOptions {
+                clamp_min_nm: 10.0,
+                clamp_max_nm: 150.0,
+                ..EvaluatorOptions::default()
+            },
+        )
+        .unwrap();
+        let cfg = RecipeAConfig {
+            population_size: 8,
+            generations: 4,
+            max_layers: 20,
+            mutation_sigma: 0.2,
+            seed: Some(25),
+        };
+        let islands = IslandRecipeConfig {
+            islands: 2,
+            migration_interval: 2,
+            migration_count: 1,
+        };
+        let spectral = SpectralInputs::from_spec(&spec, &[Radians::ZERO], &[550.0]).unwrap();
+        let operator = MemeticOperator::new(
+            spectral,
+            navette::smatrix::synthesis::cycle::MaterialPool::new(),
+            NeedleCycleConfig {
+                max_needles: 2,
+                scan_step_nm: 10.0,
+                ..NeedleCycleConfig::default()
+            },
+        );
+        let schedule = MemeticSchedule {
+            interval: 2,
+            top: 1,
+            max_insertions: 1,
+        };
+        let result = run_recipe_a_islands_memetic(
+            &decoder, &template, &evaluator, &cfg, &islands, &operator, &schedule,
+        )
+        .unwrap();
+
+        assert_eq!(result.memetic.passes, islands.islands * 2);
+        assert!(result.memetic.refined > 0);
+        assert!((0.0..=1.0).contains(&result.memetic.memetic_share()));
+        assert!(result.best.merit.is_finite());
+        assert_eq!(
+            evaluator.evaluate(&result.best.stack).unwrap(),
+            result.best.merit
+        );
     }
 
     #[test]

@@ -27,12 +27,15 @@ and the thickness residual Jacobian) and consumer-side A4 stack validation are
 exposed through the bridge/decoder. Phase 2/3 modules add the S4/F1 MOME
 archive and illuminated Recipe A run, the S6 `moors` split, the H0 control,
 I1 cross-island multi-parent crossover, the G7 campaign queue/pins/pruner,
-and the G8 kurobako problem/H0–H7 registry. Full suite: **66 tests**;
+the G8 kurobako problem/H0–H7 registry, and the G4/S2 mid-loop needle
+schedule for single-island and ring runs. Full suite: **69 tests**;
 `--all-features` includes the kurobako proof module.
 
 Limits are explicit: navette-native A4 (per-material bounds and the
-insert/migrate grammar hook), H6 screening/H7 seeded dispatch, and a
-production 40-layer merit-vs-depth bake remain. Consumer-side A4 is now
+insert/migrate grammar hook), H6 screening/H7 seeded dispatch, a production
+40-layer merit-vs-depth bake, and an equal-compute H0/H1/H3 campaign remain.
+The mid-loop schedule has one C00 overhead measurement, not a controlled arm
+result. Consumer-side A4 is now
 enforced on every GA/terminal/joint path; the earlier C00 ledger was
 superseded because it used an LM clamp below the decoder's material floor. The ledger is
 [`docs/studies/phase2_phase3_ledger.md`](docs/studies/phase2_phase3_ledger.md).

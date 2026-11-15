@@ -79,6 +79,24 @@ disabled. `genetic_algorithms`' own docs note that seeded reproducibility
 otherwise requires a fixed thread pool. The material-pool order and values are
 recorded by `ga::materials`; no hidden library state is used.
 
+## Phase 2 H3 follow-up
+
+The same example exposes the mid-loop schedule:
+
+```text
+cargo run --release --example phase1_c00_ar -- --memetic
+```
+
+It runs `run_recipe_a_memetic` with `interval = 10`, `top = 8`, and
+`max_insertions = 2`, then the same terminal finish. The recorded run reached
+`merit = 1440.475960295`, `avg_R = 0.7941 %`, 14 layers, and a zero
+actual-improvement terminal certificate. The schedule refined 80 chromosomes:
+13 write-backs were accepted, 67 operator predictions were rejected, and no
+write-back was rejected by A4 or by canonical re-scoring. Its wall-time share
+was 63.4 % (GA 0.481 s, memetic 0.832 s). This is an H3 capability and overhead
+measurement on one problem, not an equal-compute H1/H3 comparison; the Phase 2
+ledger holds the full caveat.
+
 ## Not covered
 
 This ledger does not claim C00's exact published design, a fabricated sample, or

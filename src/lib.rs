@@ -38,4 +38,4 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The current implementation phase.
 pub const STATUS: &str =
-    "Phase 2 implementation + Phase 3 modules: joint/spectral needles, A2 introspection, A4 enforcement, MOME, I1, study, kurobako; Phase 2 evidence (40-layer bake, equal-compute H0, H6/H7) open";
+    "Phase 2 implementation + Phase 3 modules: joint/spectral needles, A2 introspection, A4 enforcement, mid-loop S2, MOME, I1, study, kurobako; Phase 2 evidence (40-layer bake, equal-compute H0/H1/H3, H6/H7) open";

@@ -10,7 +10,7 @@ repository, and every limitation is listed rather than inferred away.
 - `navette` local `dev_ga` at `c9e964d` (A1/A3, A2 introspection, public
   joint scan, and the core `ndarray` 0.16 lift).
 - `navette-ga` single crate, LGPL-3.0-or-later.
-- `cargo test --all-features`: **66 passed**.
+- `cargo test --all-features`: **69 passed**.
 - `cargo clippy --all-targets --all-features -- -D warnings`: clean.
 - `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features`: clean.
 - `navette` with `ga-introspect`: **801 passed, 1 ignored**.
@@ -39,6 +39,15 @@ unit tests did not catch:
   H1 GA-only, H2 phased GA→needle→LM, H3 needle-memetic, H4 heterogeneous
   islands/tribes, H5 QD/MOME, H6 surrogate screening, H7 seeded proposal.
   The registry test now pins the strategy-item mapping.
+- Supplied `Population`s were silently using `FitnessFnWrapper::default()`
+  (the constant zero function): `Ga::with_population` does not rebind each
+  chromosome, and `Population::fitness_calculation` only evaluates `NaN`
+  fitness. The island and illuminated runs therefore carried fitness 0 while
+  the actual stack merit was finite. Both GA builders now rebind the real
+  fitness function on every supplied chromosome; a regression test checks a
+  supplied population's best fitness against a fresh evaluation. This changed
+  the island/illuminated trajectories and is a correctness fix, not a tuning
+  choice.
 
 The 40-layer bake, equal-compute H0 comparison, and H6/H7 implementations
 remain open.
@@ -110,6 +119,52 @@ navette's material schema and LM parameter bounds. Enforcing the consumer half
 invalidated the earlier C00 ledger, which had used a 5 nm LM clamp below the
 10 nm decoder floor; see `phase1_c00_ar.md`.
 
+## Phase 2 — G4/S2 mid-loop memetic schedule
+
+`engines::run_recipe_a_memetic` runs the ordinary fixed-width Recipe A one
+generation at a time. Every `MemeticSchedule::interval` generations it ranks
+the population, decodes and assembles the best `top` chromosomes, applies the
+same `MemeticOperator` the terminal finish uses, and writes an improving stack
+back into the chromosome at `RecipeAConfig::max_layers`. A write-back is
+accepted only when:
+
+- the operator's real post-polish merit is finite and below the starting
+  merit;
+- the trial stack and the canonical re-decoded stack satisfy the decoder A4
+  contract;
+- the stack fits the fixed width;
+- the canonical stack re-evaluates strictly better than the chromosome's
+  current fitness.
+
+`run_recipe_a_islands_memetic` applies the schedule to every island after its
+generation and before migration. `MemeticRunReport` records passes, refined
+chromosomes, accepted write-backs, insertions, scans, rejection reasons, GA
+time, memetic time, and `memetic_share()`.
+
+The C00-class example now accepts `--memetic`; one release run produced:
+
+```text
+merit=1440.475960295
+avg_R=0.007941379
+max_R=0.011608623
+layers=14
+terminal_insertions=0
+min_thickness_nm=12.341295
+scan_candidates_after=53
+actual_improving_after=0
+passes=10, refined=80, improved=13
+insertions=143, scans=152, prediction_rejected=67
+write_back_rejected=0, merit_rejected=0
+ga_seconds=0.481059, memetic_seconds=0.831807
+memetic_share=0.633581
+```
+
+Caveat: this is one problem and one config, not an equal-compute H1/H3
+comparison. The 63 % share means the memetic arm is much more expensive per
+generation; the 0.794 % average reflectance shows it can find a much better
+legal design, but the H1/H3 budget-matched campaign is still open. The
+terminal scan certificate is still zero actual improvements.
+
 ## Phase 2 — H0 control
 
 `engines::run_h0_control` runs independent random starts, a bounded LM
@@ -161,7 +216,8 @@ measured on the same physics.
 Limitations: the kurobako registration is a problem definition, not a full
 H0–H7 dispatch (H6 screening and the H7 seeded proposal arm are not wired);
 the archive illumination is not selection; no 40-layer production filter or
-merit-vs-depth bake is claimed; navette-native A4 and the released-navette
-gate remain open. The core `ndarray` lift (`c9e964d`) resolves the earlier
+merit-vs-depth bake is claimed; the mid-loop memetic evidence is one C00
+overhead run, not an equal-compute H0/H1/H3 campaign; navette-native A4 and
+the released-navette gate remain open. The core `ndarray` lift (`c9e964d`) resolves the earlier
 navette/moors array-major split; it is a dependency-major change for the next
 navette release.

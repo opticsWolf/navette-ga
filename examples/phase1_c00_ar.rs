@@ -5,7 +5,8 @@
 //! H/L antireflection search over 400–900 nm, a terminal needle/LM finish, and
 //! the scan certificate printed with the result. It is intentionally small
 //! enough to rerun as a check; the numbers in the ledger note come from this
-//! exact command.
+//! exact command. Pass `--memetic` to run the same config through the
+//! mid-loop H3 schedule and print its wall-time share.
 
 use std::collections::BTreeMap;
 
@@ -18,7 +19,10 @@ use navette::smatrix::synthesis::pipeline::SpectralInputs;
 use navette::smatrix::synthesis::structure::LayerSpec;
 use navette_ga::bridge::{EvaluatorOptions, FitnessEvaluator, MemeticOperator, StackTemplate};
 use navette_ga::decoder::Decoder;
-use navette_ga::engines::{finish_recipe_a, run_recipe_a, RecipeAConfig, TerminalReport};
+use navette_ga::engines::{
+    finish_recipe_a, run_recipe_a, run_recipe_a_memetic, MemeticSchedule, RecipeAConfig,
+    TerminalReport,
+};
 use navette_ga::materials::{decoder_pool, load_library, stack_template, ThicknessBounds};
 
 fn table(name: &str, n: f64, wavelengths: &[f64]) -> MaterialDef {
@@ -107,7 +111,6 @@ fn main() {
         mutation_sigma: 0.2,
         seed: Some(20261114),
     };
-    let result = run_recipe_a(&decoder, &template, &evaluator, &cfg).unwrap();
     let spectral = SpectralInputs::from_spec(&target, &[Radians::ZERO], &wavelengths).unwrap();
     let operator = MemeticOperator::new(
         spectral,
@@ -119,6 +122,31 @@ fn main() {
             ..Default::default()
         },
     );
+
+    // Default mode reproduces the Phase 1 artifact. `--memetic` runs the same
+    // config with a mid-loop schedule so its wall-time share can be recorded.
+    let memetic = std::env::args().any(|arg| arg == "--memetic");
+    let (result, memetic_report) = if memetic {
+        let run = run_recipe_a_memetic(
+            &decoder,
+            &template,
+            &mut evaluator,
+            &cfg,
+            &operator,
+            &MemeticSchedule {
+                interval: 10,
+                top: 8,
+                max_insertions: 2,
+            },
+        )
+        .unwrap();
+        (run.best, Some(run.report))
+    } else {
+        (
+            run_recipe_a(&decoder, &template, &evaluator, &cfg).unwrap(),
+            None,
+        )
+    };
     let (finished, report): (_, TerminalReport) =
         finish_recipe_a(&decoder, &template, &mut evaluator, result, &operator, 20).unwrap();
 
@@ -139,6 +167,19 @@ fn main() {
     println!("min_thickness_nm={:.6}", report.min_thickness_nm);
     println!("scan_candidates_after={}", report.scan_candidates_after);
     println!("actual_improving_after={}", report.actual_improving_after);
+    if let Some(share) = memetic_report {
+        println!("memetic_passes={}", share.passes);
+        println!("memetic_refined={}", share.refined);
+        println!("memetic_improved={}", share.improved);
+        println!("memetic_insertions={}", share.insertions);
+        println!("memetic_scans={}", share.scans);
+        println!("memetic_prediction_rejected={}", share.prediction_rejected);
+        println!("memetic_write_back_rejected={}", share.write_back_rejected);
+        println!("memetic_merit_rejected={}", share.merit_rejected);
+        println!("memetic_ga_seconds={:.6}", share.ga_seconds);
+        println!("memetic_seconds={:.6}", share.memetic_seconds);
+        println!("memetic_share={:.6}", share.memetic_share());
+    }
     println!(
         "stack={}",
         finished
