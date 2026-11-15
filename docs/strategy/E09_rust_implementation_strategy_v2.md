@@ -57,11 +57,12 @@ amendments are implemented by the owner, never requested.*
   merit-vs-depth bake at 10/20/30/40/50 layers shows a real depth signal
   (passband 4.55 % -> 0.45 %, stopband 75.4 % -> 99.95 %) but 40 layers is
   not monotonic (30 layers refined better at the same cap). A needle-grown
-  path from 10 layers stops after four improving insertions at 18 layers
-  (1.67 % pass / 94.06 % stop), so it does not reach the 40-layer production
-  screen either. All screens pass A4; none is a GA-discovered architecture.
-  The growth run exposed a navette x0-floor bug, fixed on `dev_ga` at
-  `5adb40c`. The H6 linear
+  path from 10 layers stops at 18 layers (1.67 % pass / 94.06 % stop) and a
+  20-layer start reaches 30 layers (0.16 % / 99.08 %); a 30-layer start is
+  already at that local optimum (0.68 % / 99.53 %). None reaches the 40-layer
+  production count, and the 30-layer result is not a GA-discovered
+  architecture. The growth run exposed a navette x0-floor bug, fixed on
+  `dev_ga` at `5adb40c`. The H6 linear
   surrogate used 247 total true evaluations but lost to a 125-GA-budget H1
   control on quality (3.34 % vs 2.67 %); screening is for expensive-evaluation
   regimes, not a cheap-TMM win. The H7 seed-bank fallback is recorded. This is

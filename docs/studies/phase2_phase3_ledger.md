@@ -276,10 +276,22 @@ R(600)=0.895544  R(700)=0.964255
 ```
 
 The operator accepts only individually improving insertions, and it stops
-after four because the next scan has no improving candidate. Growth reaches 18
-layers, not 40; the target still needs the deeper seeded architecture. This is
-a real insertion-heavy result, but not a GA-discovered or 40-layer production
-filter.
+after four because the next scan has no improving candidate. Growth from 20
+layers (`--pairs 10`) accepts five insertions and reaches 30 layers; a
+30-layer seed (`--pairs 15`) accepts none, because it is already at the same
+local optimum. The 30-layer results meet the passband/stopband screen but fail
+the 40-layer production count:
+
+| seed pairs | start layers | accepted | final layers | merit | pass avg R | stop avg R |
+|---:|---:|---:|---:|---:|---:|---:|
+| 5 | 10 | 4 | 18 | 254,930.958714 | 1.6721 % | 94.0613 % |
+| 10 | 20 | 5 | 30 | 6,561.660031 | 0.1641 % | 99.0789 % |
+| 15 | 30 | 0 | 30 | 2,877.608791 | 0.6752 % | 99.5303 % |
+
+The 30-layer seed is the best of these local optima and shows that a
+production-worthy edge does not require 40 layers on this target. It is still
+not a GA-discovered architecture, and the 40-layer seeded artifact remains the
+only 40-layer production result.
 
 The run also exposed a navette start-point bug: an inserted film below the
 10 nm floor was passed to LM as x0, and `ClampUpAlways` rejected it before the

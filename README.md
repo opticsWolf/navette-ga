@@ -82,7 +82,7 @@ examples/
   phase2_depth_bake.rs     # C00 depth/MOME bake with production screen
   phase2_filter_40.rs      # forty-layer seeded H/L edge-filter artifact
   phase2_filter_depth.rs   # 10/20/30/40/50-layer filter depth bake
-  phase2_filter_growth.rs  # 10-layer needle-grown filter (18 layers)
+  phase2_filter_growth.rs  # needle-grown filter probe (10/20/30-layer starts)
   phase2_campaign.rs       # H0-H7 campaign + ERT + Holm (bench feature)
 docs/
   studies/                 # Phase 1 C00-class AR ledger and run artifacts

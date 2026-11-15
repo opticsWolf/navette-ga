@@ -2,8 +2,10 @@
 //! Needle-grown steep-edge filter (Recipe B growth path).
 //!
 //! A chirped H/L quarter-wave stack gives a long-pass edge; the target rewards
-//! low reflectance below 500 nm and high reflectance above 600 nm. This is the
-//! starting point for the Recipe B filter run, not a claimed optimum yet.
+//! low reflectance below 500 nm and high reflectance above 600 nm. The seed is
+//! `--pairs` H/L pairs (default 5), and the operator runs for up to
+//! `--insertions` improving needle steps (default 30). This is a growth probe,
+//! not a claimed optimum.
 
 use std::collections::BTreeMap;
 
@@ -75,7 +77,18 @@ fn target(profile: &[(f64, f64, f64)], wavelengths: &[f64]) -> MeritSpec {
     spec
 }
 
+fn number(args: &[String], flag: &str, default: usize) -> usize {
+    args.iter()
+        .position(|arg| arg == flag)
+        .and_then(|index| args.get(index + 1))
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(default)
+}
+
 fn main() {
+    let args = std::env::args().collect::<Vec<_>>();
+    let pairs = number(&args, "--pairs", 5);
+    let max_insertions = number(&args, "--insertions", 30);
     let wavelengths: Vec<f64> = (400..=900).step_by(5).map(f64::from).collect();
     let library = vec![
         table("H", 2.30, &wavelengths),
@@ -126,7 +139,6 @@ fn main() {
     )
     .unwrap();
 
-    let pairs = 5;
     let mut films = Vec::new();
     for index in 0..pairs {
         let centre = 450.0 + index as f64 * (500.0 / pairs as f64);
@@ -141,12 +153,14 @@ fn main() {
     let seed_merit = evaluator.evaluate(&stack).unwrap();
     evaluator.refine(&mut stack).unwrap();
     println!(
-        "GROWTH seed_merit={seed_merit:.6} after_lm={:.6} layers={}",
+        "GROWTH pairs={pairs} seed_merit={seed_merit:.6} after_lm={:.6} layers={}",
         evaluator.evaluate(&stack).unwrap(),
         stack.films().len()
     );
 
-    let report = operator.apply(&mut evaluator, &mut stack, 30).unwrap();
+    let report = operator
+        .apply(&mut evaluator, &mut stack, max_insertions)
+        .unwrap();
     println!(
         "GROWTH operator insertions={} scans={} merit={:.6} layers={}",
         report.steps.len(),
