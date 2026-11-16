@@ -4,7 +4,9 @@
 //! A chirped H/L quarter-wave stack gives a long-pass edge; the target rewards
 //! low reflectance below 500 nm and high reflectance above 600 nm. Pass
 //! `--fixture shortpass` with the same stack to reverse the bands and the
-//! chirp. This is the starting point for the Recipe B filter run, not a
+//! chirp. `--terminal-h3-h6` enables the common terminal finish on H3–H6 and
+//! `--no-h7-terminal` disables it on H7; together they are the terminal
+//! ablation. This is the starting point for the Recipe B filter run, not a
 //! claimed optimum yet.
 
 use std::collections::BTreeMap;
@@ -93,6 +95,10 @@ fn number(args: &[String], flag: &str, default: usize) -> usize {
         .unwrap_or(default)
 }
 
+fn flag(args: &[String], flag: &str) -> bool {
+    args.iter().any(|arg| arg == flag)
+}
+
 fn genome_from_stack(decoder: &Decoder, stack: &DesignStack) -> Genome {
     let materials = decoder.pool().materials();
     Genome::from(
@@ -121,6 +127,8 @@ fn main() {
     let seed_pairs = number(&args, "--seed-pairs", 20).clamp(1, 30);
     let initial_pairs = number(&args, "--initial-pairs", 0).clamp(0, 30);
     let terminal_insertions = number(&args, "--terminal-insertions", 10).clamp(1, 100);
+    let finish_h3_h6 = flag(&args, "--terminal-h3-h6");
+    let finish_h7 = !flag(&args, "--no-h7-terminal");
     let fixture = args
         .iter()
         .position(|arg| arg == "--fixture")
@@ -279,7 +287,8 @@ fn main() {
             noise_sigma: 0.10,
             proposals_per_seed: 4,
         }),
-        finish_h7: true,
+        finish_h3_h6,
+        finish_h7,
         terminal_insertions,
         ..ComparisonOptions::default()
     };
@@ -287,14 +296,16 @@ fn main() {
         .map(|offset| 20261121 + offset as u64)
         .collect::<Vec<_>>();
     println!(
-        "FILTER_BUDGET fixture={} seeds={} max_layers={} terminal_insertions={} decoder_width={} seed_pairs={} initial_pairs={}",
+        "FILTER_BUDGET fixture={} seeds={} max_layers={} terminal_insertions={} decoder_width={} seed_pairs={} initial_pairs={} finish_h3_h6={} finish_h7={}",
         fixture,
         seed_count,
         max_layers,
         terminal_insertions,
         (max_layers + 2 * terminal_insertions).max(80),
         seed_pairs,
-        initial_pairs
+        initial_pairs,
+        finish_h3_h6,
+        finish_h7
     );
     let campaign = run_comparison_campaign(
         &decoder,
@@ -366,6 +377,28 @@ fn main() {
             stop_avg,
             min_nm,
             deep_production
+        );
+        for (index, run) in entry.runs.iter().enumerate() {
+            println!(
+                "FILTER_SEED fixture={} arm={} seed={} merit={:.6} layers={} terminal={}",
+                fixture,
+                entry.arm.label(),
+                seeds[index],
+                run.result.merit,
+                run.result.decoded.len(),
+                run.terminal.is_some()
+            );
+        }
+        let terminal = best.terminal.as_ref();
+        println!(
+            "FILTER_TERMINAL fixture={} arm={} finished={} insertions={} scans={} actual_improving={} lm_converged={}",
+            fixture,
+            entry.arm.label(),
+            terminal.is_some(),
+            terminal.map_or(0, |report| report.insertions),
+            terminal.map_or(0, |report| report.scans),
+            terminal.map_or(0, |report| report.actual_improving_after),
+            terminal.is_some_and(|report| report.lm_converged)
         );
     }
     let ert = expected_running_time(&campaign, 30_000.0).unwrap();

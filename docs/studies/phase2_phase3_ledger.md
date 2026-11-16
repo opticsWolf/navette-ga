@@ -10,7 +10,7 @@ repository, and every limitation is listed rather than inferred away.
 - `navette` local `dev_ga` at `5adb40c` (A1/A3, A2 introspection, public
   joint scan, the core `ndarray` 0.16 lift, and the LM x0-floor fix).
 - `navette-ga` single crate, LGPL-3.0-or-later.
-- `cargo test --all-features`: **86 passed**.
+- `cargo test --all-features`: **87 passed**.
 - `cargo clippy --all-targets --all-features -- -D warnings`: clean.
 - `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features`: clean.
 - `navette` with `ga-introspect`: **802 passed, 1 ignored**.
@@ -777,10 +777,75 @@ p = 0.034965.
   the seven-seed best.
 - Seeding changes the pairwise family: long-pass drops from 24/28 to 23/28
   significant pairs, short-pass from 23/28 to 17/28, because the fixed-width
-  arms move closer together. The deep-screen conclusion is unchanged: only
-  the terminal arms H2/H7 cross it.
+  arms move closer together. In this no-terminal run only H2/H7 cross the
+  deep screen; the terminal ablation below shows that H3–H6 cross it once the
+  terminal stage is common.
 - This is still not a full factorial design. It holds the seed, cap, terminal
   budget, and evaluation budget fixed and changes only the initialization.
+
+## Terminal ablation (2026-11-16)
+
+`ComparisonOptions::finish_h3_h6` makes the H2-style terminal needle/LM stage
+an orthogonal switch for H3–H6; H7 uses its existing `finish_h7` switch. H2 is
+always terminal. `ComparisonRun::terminal` now retains the `TerminalReport`
+(certificate, insertions, scans, LM convergence), and
+`phase2_filter_campaign` exposes:
+
+```text
+--terminal-h3-h6     run the terminal finish on H3–H6
+--no-h7-terminal     run H7 without its terminal finish
+```
+
+The ablation used the same two-layer seed, 40-layer GA cap, decoder width 80,
+20-insertion budget, and 8 seeds (`20261121..20261128`) on long-pass and
+short-pass. The `off` family is H3–H7; the `on` family is H2–H7. H2 is the
+terminal reference in both. H0/H1 are unchanged controls.
+
+### Long-pass
+
+| arm | off median | on median | on/off seed wins | off layers | on layers | on best |
+|---|---:|---:|---:|---:|---:|---:|
+| H3 | 1,172,988.202 | 312.163 | 8 / 0 | 29 | 69 | 15.730635 |
+| H4 | 14,105,964.686 | 809.321 | 8 / 0 | 13 | 66 | 13.826304 |
+| H5 | 14,167,564.723 | 63.974 | 8 / 0 | 25 | 59 | 9.122684 |
+| H6 | 30,332,649.389 | 639.520 | 8 / 0 | 25 | 58 | 28.189202 |
+| H7 | 9,212,588.261 | 4,140.801 | 8 / 0 | 26 | 44 | 546.192961 |
+| H2 reference | — | 525.168 | — | — | 64 | 115.468412 |
+
+### Short-pass
+
+| arm | off median | on median | on/off seed wins | off layers | on layers | on best |
+|---|---:|---:|---:|---:|---:|---:|
+| H3 | 1,458,097.353 | 11.548 | 8 / 0 | 25 | 71 | 0.450330 |
+| H4 | 8,655,845.932 | 6.930 | 8 / 0 | 18 | 65 | 0.424657 |
+| H5 | 10,204,882.317 | 27.394 | 8 / 0 | 22 | 67 | 0.574161 |
+| H6 | 21,471,176.763 | 9.580 | 8 / 0 | 16 | 60 | 0.694890 |
+| H7 | 4,404,462.410 | 39,111.807 | 8 / 0 | 6 | 73 | 8.990342 |
+| H2 reference | — | 8.119 | — | — | 62 | 0.487692 |
+
+### Findings
+
+- Terminal wins on **8/8 seeds for every tested arm on both fixtures**. The
+  main effect is much larger than the arm differences.
+- With terminal enabled, **H3, H4, H5, and H6 all pass the deep screen**, not
+  only H2/H7. The earlier “only H2/H7 are deep” statement was a property of
+  the default dispatch, where H3–H6 had no terminal stage.
+- The terminal-on family clusters: long-pass has 15/28 Holm-significant pairs
+  and short-pass 8/28, versus 23/28 and 14/28 with terminal off. H2–H6 are
+  mostly not separated. On long-pass H7 is significantly worse than H3 and
+  H5; on short-pass it is worse than H2 and H4.
+- Best terminal-on medians are fixture-dependent: long-pass H5 (63.97), then
+  H3 (312), H2 (525), H6 (640), H4 (809), H7 (4,141); short-pass H4 (6.93),
+  then H2 (8.12), H6 (9.58), H3 (11.55), H5 (27.39), H7 (39,112).
+- Every terminal arm reports `actual_improving_after = 0`; the scan
+  certificate holds. The terminal LM did not report convergence under the
+  1,000-iteration cap, so `lm_converged=false` for the terminal runs.
+- The result does not make H5 a QD optimizer or H6 a GP; it shows that the
+  terminal stage dominates their current filter comparisons. H5 still records
+  rather than steers selection, and H6 is still a linear screen.
+- The next comparison should optimize the terminal stage itself
+  (insertion/search budget, decoder width, LM cap) and only then revisit
+  mechanism-specific arms.
 
 ## Implementation learnings and plan update (2026-11-16)
 
@@ -811,8 +876,9 @@ target and a 5k LM cap; the seeded 40-layer filter is a stack plus LM, and
 the needle-grown 40-layer result is seed-initialized, not a GA discovery; the
 equal-budget H0/H1 result is five seeds on one target; the
 H7 arm is a mined-seed fallback, not a diffusion implementation; H6 is a
-linear screen, not a GP; H0–H6 now have the two-layer seed path but only the
-terminal arms H2/H7 pass the deep screen; navette-native A4 and the
-released-navette gate remain open. The core `ndarray` lift (`c9e964d`) resolves the earlier
+linear screen, not a GP; H0–H6 now have the two-layer seed path, and the
+terminal ablation shows H3–H6 also pass the deep screen when the common
+terminal stage is enabled; navette-native A4 and the released-navette gate
+remain open. The core `ndarray` lift (`c9e964d`) resolves the earlier
 navette/moors array-major split; it is a dependency-major change for the next
 navette release.

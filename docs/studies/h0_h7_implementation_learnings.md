@@ -1,7 +1,7 @@
 # H0–H7 implementation learnings
 
 **Status:** analysis of the code and campaigns at `36d4270` (84 tests),
-updated with the all-arm seeded campaign after `5fe6810` (86 tests).
+updated with the all-arm seeded campaign and the terminal ablation (87 tests).
 **Scope:** the eight comparison arms in `src/bench.rs`, the engines they call,
 and the C00 / long-pass / short-pass campaigns in
 `docs/studies/phase2_phase3_ledger.md`.
@@ -45,13 +45,36 @@ unchanged when `initial_genomes` is empty. Seven seeds, 40-layer GA cap,
 | H6 | 17,044,481.376999 | 25 | 9,299,826.248700 | 16 | no |
 | H7 | 546.192961 | 44 | 8.990342 | 73 | yes |
 
-This confirms the main finding rather than changing it: seeding helps H3
-(29/25 layers, 220k/189k merit) but not enough without terminal growth;
-H4/H5/H6 remain weak filter optimizers; H0's best is unchanged because its
-other random starts dominate; only H2/H7 pass the deep screen. Holm-significant
-pairs: 23/28 long-pass, 17/28 short-pass. The seed moves the fixed-width arms
-closer together, so the seeded short-pass family separates less than the
-random-start family.
+At this point only H2/H7 passed the deep screen in the default dispatch:
+seeding helped H3 (29/25 layers, 220k/189k merit) but not enough without
+terminal growth; H4/H5/H6 remained weak filter optimizers; H0's best was
+unchanged because its other random starts dominated. Section 0.2 shows that
+this was the terminal confound, not the mechanism ranking. Holm-significant
+pairs in this no-terminal table: 23/28 long-pass, 17/28 short-pass.
+
+## 0.2 Terminal ablation (decisive update, 2026-11-16)
+
+`finish_h3_h6` makes the terminal stage an orthogonal switch for H3-H6; H7
+uses `finish_h7`. H2 is always terminal. The eight-seed ablation used the same
+two-layer seed, 40-layer cap, decoder width 80, and 20-insertion budget on
+long-pass and short-pass.
+
+| arm | long off median | long on median | short off median | short on median | on/off wins | long layers off/on | short layers off/on |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| H3 | 1,172,988 | 312.163 | 1,458,097 | 11.548 | 8/0 | 29/69 | 25/71 |
+| H4 | 14,105,965 | 809.321 | 8,655,846 | 6.930 | 8/0 | 13/66 | 18/65 |
+| H5 | 14,167,565 | 63.974 | 10,204,882 | 27.394 | 8/0 | 25/59 | 22/67 |
+| H6 | 30,332,649 | 639.520 | 21,471,177 | 9.580 | 8/0 | 25/58 | 16/60 |
+| H7 | 9,212,588 | 4,140.801 | 4,404,462 | 39,111.807 | 8/0 | 26/44 | 6/73 |
+| H2 reference | - | 525.168 | - | 8.119 | - | - | 64/62 |
+
+Terminal wins on **8/8 seeds for every tested arm on both fixtures**. With
+terminal on, H3-H6 all pass the deep screen; H2-H6 cluster, and H7 is no
+longer the best arm. Long-pass terminal-on medians rank H5, H3, H2, H6, H4,
+H7; short-pass ranks H4, H2, H6, H3, H5, H7. The Holm family collapses to
+15/28 significant pairs on long-pass and 8/28 on short-pass because the
+terminal arms become similar. Every terminal run reports
+`actual_improving_after = 0`; the LM cap did not converge.
 
 ## 1. Executive findings
 
@@ -75,18 +98,20 @@ Conflating them produced a misleading negative result.
 
 ### F2. Terminal local refinement is the dominant deep-filter mechanism
 
-On the long-pass fixture, H2 (GA + terminal needle/LM) and H7 (VL seed +
-terminal) are the only deep-screen passes. H1, H3, H4, H5, and H6 do not have
-a terminal finish in the dispatcher and all remain far from a 40-layer deep
-filter. H3's mid-loop memetic pass is not equivalent: it improves C00 but
-does not carry the filter to depth.
+Before the ablation, H2 (GA + terminal needle/LM) and H7 (VL seed + terminal)
+were the only deep-screen passes because H1 and H3-H6 had no terminal stage in
+the dispatcher. That was a dispatch confound. With `finish_h3_h6`, H3-H6 all
+pass the deep screen, terminal wins 8/8 seeds on both fixtures, and H2-H6
+cluster. H3's mid-loop pass was never a substitute for terminal refinement;
+it becomes competitive only after the common stage is enabled.
 
 The evidence supports a two-stage model:
 
 1. search produces a promising architecture/thickness pattern;
 2. terminal needle insertion plus LM supplies the last local depth/quality.
 
-The second stage is not optional for the current deep-filter target.
+The second stage is not optional for the current deep-filter target. It should
+be a common stage in the experiment design, not an H2/H7-only arm property.
 
 ### F3. Depth is budget-limited before it is target-limited
 
@@ -127,12 +152,15 @@ The correct mental model is:
 C00 and the two filter fixtures disagree:
 
 - H3 has the best C00 single run (1,095 merit / 0.61 % average R).
-- H2 has the best long-pass deep result (43 layers / 0.048 % pass).
-- H2 and H7 are the only long-pass deep-screen passes.
-- H7 has the best short-pass merit at the default budget; H2 wins target
-  success and is better once seeded/deepened.
-- H4 and H5 are consistently weak optimizers on the filter fixtures; their
-  purpose is population/archive structure, not filter merit.
+- Before terminal ablation, H2 had the best long-pass deep result and H2/H7
+  were the only deep-screen passes.
+- After terminal ablation, H3-H6 all pass the deep screen. Long-pass median
+  rank is H5, H3, H2, H6, H4, H7; short-pass is H4, H2, H6, H3, H5, H7.
+- H4/H5 were weak without terminal, but H5 has the best long-pass terminal-on
+  median and H4 the best short-pass terminal-on median.
+- H7 is no longer the best filter arm once the terminal stage is common; the
+  seed bank is not a substitute for the terminal stage or for the other
+  searches.
 
 A campaign result is a statement about a fixture, target, width, terminal
 budget, seed count, and evaluation budget. It is not a global ranking.
@@ -166,7 +194,9 @@ reaches 47 layers on long-pass. That is useful architecture transfer.
 The Gaussian proposal expansion was effectively neutral on C00 (16,671.9 vs
 16,669.3 merit) and did not solve the deep-architecture problem. It is a
 local thickness perturbation, not a trained diffusion/LLM prior. H7 is
-currently **seeded VL + terminal**, not a generative model.
+currently **seeded VL + terminal**, not a generative model. With the terminal
+stage enabled on H3-H6, H7 is no longer the best filter arm, so the seed bank
+is not the missing architecture prior either.
 
 ### F9. The statistical protocol needs at least seven seeds for a 28-pair family
 
@@ -182,6 +212,8 @@ Current results:
 - Short-pass, seven seeds: 23 of 28; H2 and H7 are not separable at the
   default budget.
 - Short-pass with the seeded/deepened H2: H2 and H7 separate (Holm 0.0197).
+- Terminal-on, eight seeds: 15/28 significant long-pass and 8/28 short-pass;
+  H2-H6 mostly do not separate. Terminal removes arm separation, not quality.
 
 The plan should treat seed count as a design parameter, not an afterthought.
 
@@ -212,12 +244,12 @@ example-only patches.
 |---|---|---|---|
 | **H0** | Multi-start → LM → optional needle → LM | Robust local convergence; useful classical control | No learning/population; one seeded start does not rescue it; poor at deep filter targets |
 | **H1** | Fixed-width GA only | Cheapest arm; best pure-GA C00 run (10,087 / 2.00 %) | No LM/needle; fixed width; no terminal; plateaus at shallow depth |
-| **H2** | Fixed-width GA → terminal needle/LM (S1) | Best deep long-pass result (43 layers, 0.048 % / 99.666 %); 64/62 with seeded two-layer start | Width/terminal sensitive; only improving insertions; high variance; not pure GA |
-| **H3** | Fixed-width GA + mid-loop memetic top-k (S2) | Best C00 single run (1,095 / 0.61 %) | No terminal; fixed width; filter results weak (22 layers); schedule overhead |
-| **H4** | Heterogeneous islands/tribes (S3) | Tests diversity/migration/constraints | Fixed width; no terminal; deep-filter results poor; often near H1 |
-| **H5** | MOME archive illumination (S4-lite) | Archive coverage and diagnostics | Archive does not steer selection; not full QD; weak optimizer; no terminal |
-| **H6** | Linear ridge surrogate screen (S7) | ~45 % true-eval saving; final re-eval guarantee | Linear, not GP; quality loss on cheap TMM; no terminal/VL |
-| **H7** | VL seeded/mined GA + optional proposal + terminal (S8) | Only true VL arm; 47-layer long-pass; 73-layer short-pass from a two-layer seed | Seed-initialized; Gaussian proposal negative; no diffusion; seed-dependent success |
+| **H2** | Fixed-width GA → terminal needle/LM (S1) | Terminal reference; 64/62 layers with a seeded two-layer start; clustered with H3-H6 when terminal is common | Width/terminal sensitive; only improving insertions; high variance; not pure GA |
+| **H3** | Fixed-width GA + mid-loop memetic top-k (S2) | C00 best single run (1,095 / 0.61 %); terminal-on 69/71 layers, best 15.7/0.45 merit | Fixed width; schedule overhead; terminal-on median is fixture-dependent (best long-pass 312) |
+| **H4** | Heterogeneous islands/tribes (S3) | Terminal-on 66/65 layers; best short-pass terminal-on median 6.93 and best 0.42 | Fixed width; without terminal it is weak; island diversity not isolated |
+| **H5** | MOME archive illumination (S4-lite) | Terminal-on 59/67 layers; best long-pass terminal-on median 63.97 and best 9.12 | Archive does not steer selection; not full QD; without terminal it is weak |
+| **H6** | Linear ridge surrogate screen (S7) | ~45 % true-eval saving; final re-eval guarantee; terminal-on 58/60 layers | Linear, not GP; quality loss on cheap TMM; terminal does not make it a better optimizer |
+| **H7** | VL seeded/mined GA + optional proposal + terminal (S8) | Only true VL arm; 44/73 layers terminal-on; seed transfer works | No longer best once terminal is common; Gaussian proposal negative; no diffusion; seed-dependent |
 
 ### H2 vs H7: what is actually being compared
 
@@ -333,13 +365,13 @@ wavelength bands, and merit weights.
 
 | Assumption | Confidence | Reason |
 |---|---|---|
-| Deep filters need local refinement after architecture search | High | Only H2/H7 with terminal reach deep-screen quality; H1/H3–H6 without terminal do not |
+| Deep filters need local refinement after architecture search | High | Terminal wins 8/8 seeds on every tested arm and all H3–H6 pass the deep screen when enabled |
 | Fixed-width presence can grow within its width | High | H1 26/18 layers from a two-layer seed in a 40-slot genome |
 | Width/terminal budget dominates reachable depth | High | Short-pass 35 → 40 → 60 layers under cap/terminal changes |
 | 40 layers is not a universal target requirement | High | Short-pass 35/38 layers already has <0.1 % pass / >99.8 % stop; deeper is better but not necessary for every screen |
 | Seed transfer is useful but seed-dependent | Medium | H7 44/73 layers from two-layer seed; target success 5/7 and 3/7 |
 | H6 helps only when true evaluation is expensive | Medium | 45 % true-eval saving but quality loss on cheap TMM |
-| H3/H4/H5 rankings generalize beyond C00 | Low | Filter results are poor and the arms lack terminal refinement |
+| H3/H4/H5 rankings generalize beyond C00 | Medium | Terminal-on filter medians are fixture-dependent but H2–H6 mostly do not separate |
 | H2 vs H7 isolates VL vs fixed | Low | At least four confounded dimensions |
 | Five seeds suffice for 28-pair Holm claims | Rejected | Minimum adjusted p = 0.2222 |
 | A4/navette-native ownership is optional | Rejected | Material-order, x0-floor, and clamp bugs changed results |
@@ -352,9 +384,10 @@ wavelength bands, and merit weights.
 2. **Initial-genome plumbing is complete for H0–H6.** The seven-seed all-arm
    table is recorded; H7 remains on its separate seed bank. The next step is a
    factorial design, not another seed path.
-3. **Make terminal refinement explicit in every report.** Record insertion
-   budget, decoder width, final layers, min thickness, true evaluations, and
-   certificate status.
+3. **Make terminal refinement explicit in every report.** `finish_h3_h6` and
+   `ComparisonRun::terminal` now expose the switch and certificate. Record
+   insertion budget, decoder width, final layers, min thickness, true
+   evaluations, and certificate status.
 4. **Use target-specific depth screens.** Keep the 40-layer screen for the
    long-pass production target, but do not treat it as a universal quality
    threshold. Report optical quality and layer count separately.
@@ -368,17 +401,18 @@ wavelength bands, and merit weights.
    consumer checks caught real bugs; native ownership should make them
    impossible rather than test-detectable.
 9. **Add the missing cross-factor experiments before making universal
-   claims:** VL + islands, VL + archive, fixed + terminal, and surrogate +
-   terminal. The all-arm seeded start is now recorded; it is not a full
-   factorial design.
+   claims:** VL + islands, VL + archive, and terminal-stage budget/search
+   optimization. Fixed + terminal is now recorded and is the dominant effect;
+   the all-arm seeded start is also recorded, but this is not a full factorial
+   design.
 
 ## 6. Open questions
 
-- Does H3’s mid-loop schedule become competitive on filters when combined
-  with terminal refinement, or is its C00 advantage target-specific?
-- Does H4’s island diversity help once the population has variable length and
-  a terminal finish?
-- Can H5’s archive steer selection without losing H2’s local convergence?
+- With terminal common, which of H3-H6 has the best median/ERT trade-off once
+  the family is powered to separate them?
+- Does H4's island diversity help once the population has variable length and
+  a common terminal stage?
+- Can H5's archive steer selection without losing the terminal-on convergence?
 - Does a GP/BO H6 beat the linear screen on an expensive evaluator, or does
   the feature space remain too small?
 - Can a learned H7 proposal beat seed transfer, or is the seed bank the real
@@ -390,20 +424,22 @@ wavelength bands, and merit weights.
 
 ## 7. Bottom line
 
-The implementation has validated the **modular engine** and the **local
-refinement** thesis, but not the **bundled-arm ranking** thesis. The strongest
-reliable result is:
+The implementation has validated the **modular engine** and the **terminal
+local-refinement** thesis, but not the **bundled-arm ranking** thesis. The
+strongest reliable result is:
 
-> global search plus terminal needle/LM refinement reaches deep filters; the
-> required depth is set by GA width and terminal budget, not by the arm label.
+> terminal needle/LM refinement is the dominant deep-filter stage; with it
+> enabled, H3-H6 also reach deep filters, and H2-H6 are statistically similar.
+> The required depth is set by GA width and terminal budget, not by the arm
+> label.
 
 The strongest negative results are:
 
-> fixed-width presence alone does not replace terminal growth; H6’s linear
-> screen does not improve cheap-TMM quality; H7’s Gaussian proposal is not the
-> missing architecture prior; and five-seed families cannot support 28-pair
-> Holm claims.
+> terminal was mis-specified as an H2/H7-only arm property; H6's linear screen
+> does not improve cheap-TMM quality; H7's Gaussian proposal is not the
+> missing architecture prior; H7's seed bank is not superior once terminal is
+> common; and five-seed families cannot support 28-pair Holm claims.
 
-The plan should therefore move from “more H arms” toward “orthogonal axes plus
-pinned presets,” complete the missing seed paths, and report the budget box
-with every depth claim.
+The plan should therefore move from "more H arms" toward "orthogonal axes plus
+pinned presets," make terminal a common stage, and report the budget box with
+every depth claim.

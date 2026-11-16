@@ -27,7 +27,7 @@ amendments are implemented by the owner, never requested.*
   `cycle::joint_needle_scan` and the A2 merit gradient (`d9faa79`); `c9e964d` lifts the core to `ndarray` 0.16 so navette, `moors`, and `navette-ga` share one array major; `5adb40c` clamps the LM start to the policy floor.
 - **`navette-ga`:** G2 decoder, G1 bridge, A1 memetic operator, fixed and
   variable-length Recipe A, the Phase 2 ring, and the new Phase 2/3 modules
-  (`moors_split`, `qd`, `study`, `bench`). Full suite: **86 tests**.
+  (`moors_split`, `qd`, `study`, `bench`). Full suite: **87 tests**.
 - **Phase 1 exit artifact:** G3 rung-2 material loader; terminal LM + needle
   finish with Lamarckian write-back and actual-trial scan certificate;
   C00-class ledger at `docs/studies/phase1_c00_ar.md` (8 layers, avg
@@ -109,22 +109,31 @@ amendments are implemented by the owner, never requested.*
   H7 is seed-initialized. The same seed path now covers H0 and H3–H6: on
   long-pass, H3 reaches 29 layers at 220,526 merit, H4 13 layers, H5 25, and
   H6 25; on short-pass H3 reaches 25 layers at 189,001, H4 18, H5 22, and H6
-  16. Only H2 and H7 pass the deep screen; seeding does not give H3–H6 the
-  missing terminal growth. H0 keeps the same seven-seed best
+  16. In this no-terminal table only H2 and H7 pass the deep screen; seeding
+  does not give H3–H6 the missing terminal growth. H0 keeps the same seven-seed best
   (1,065,970.763457 long-pass; 650,958.663020 short-pass) because its seeded
   start is one of several starts. The seven-seed seeded families have 23/28
-  significant Holm pairs on long-pass and 17/28 on short-pass. The H7
-  diffusion proposal is not implemented.
+  significant Holm pairs on long-pass and 17/28 on short-pass. The terminal
+  ablation (`--terminal-h3-h6`, `--no-h7-terminal`) is decisive: terminal
+  improves H3–H7 on 8/8 seeds on both fixtures, and H3–H6 all pass the deep
+  screen. On long-pass the terminal-on median merits are H5 63.97, H3 312,
+  H2 525, H6 640, H4 809, H7 4,141; on short-pass H4 6.93, H2 8.12, H6 9.58,
+  H3 11.55, H5 27.39, H7 39,112. H2–H6 are mostly not Holm-separated once
+  terminal is on; H7 is significantly worse than H3/H5 on long-pass and than
+  H2/H4 on short-pass. The earlier "only H2/H7 are deep" statement describes
+  the default dispatch, not the mechanisms: terminal was the missing common
+  stage. The H7 diffusion proposal is not implemented.
 - **Release gate:** A1/A3/A2 are not in published navette 0.10.0. The bridge
   is local-path-only until a navette release carries them; `cargo publish` is
   expected to fail verification meanwhile.
 - **Remaining:** an optional nalgebra `DMatrix` adapter (not required),
   navette-native A4 (per-material bounds and insert/migrate grammar hook), the
-  H7 diffusion proposal, and the multi-seed equal-compute H0/H1/H3 campaign;
-  the released-navette gate remains. C00, long-pass, and short-pass H0–H7
-  campaigns and the seven-seed all-arm seeded-start tables are recorded. A
-  needle-grown 40-layer filter, a GA-initialized 43-layer H2 deep filter, the
-  seeded 40-layer artifact, and the filter depth bake exist.
+  H7 learned proposal, the multi-seed equal-compute H0/H1/H3 campaign, and
+  terminal-stage budget/power optimization; the released-navette gate
+  remains. C00, long-pass, and short-pass H0–H7 campaigns, the seven-seed
+  all-arm seeded-start tables, and the eight-seed terminal ablation are
+  recorded. A needle-grown 40-layer filter, a GA-initialized 43-layer H2 deep
+  filter, the seeded 40-layer artifact, and the filter depth bake exist.
 
 ## Planning update (2026-11-16)
 
@@ -144,9 +153,11 @@ The H0–H7 implementation analysis is
    H7 uses its separate seed bank. The seven-seed all-arm tables are in the
    ledger.
 3. **Terminal refinement is a first-class factor.** H2/H7 deep-filter results
-   depend on terminal needle/LM; H3–H6 have no terminal in the dispatcher.
-   Every depth report must carry insertion budget, decoder width, final
-   layers, minimum thickness, true evaluations, and certificate status.
+   depend on terminal needle/LM. H3–H6 now have a `finish_h3_h6` switch and
+   report `ComparisonRun::terminal`; the eight-seed ablation shows a large
+   terminal main effect on every fixed arm. Every depth report must carry
+   insertion budget, decoder width, final layers, minimum thickness, true
+   evaluations, and certificate status.
 4. **Depth is budget-limited before it is target-limited.** Short-pass moves
    from 35 to 40 to 60 layers under cap/terminal changes. Forty layers is a
    target-specific screen, not a universal quality threshold; report optical

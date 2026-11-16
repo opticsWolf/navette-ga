@@ -24,7 +24,7 @@ use crate::engines::{
     run_recipe_a_seeded, run_recipe_a_surrogate, run_recipe_a_surrogate_seeded,
     run_recipe_a_tribes, run_recipe_a_tribes_seeded, run_recipe_a_vl_proposed,
     run_recipe_a_vl_seeded, H0Config, HeterogeneousTribeConfig, IslandRecipeConfig, IslandStrategy,
-    MemeticSchedule, ProposalConfig, RecipeAConfig, RecipeAResult, SurrogateConfig,
+    MemeticSchedule, ProposalConfig, RecipeAConfig, RecipeAResult, SurrogateConfig, TerminalReport,
     TribeConstraint, VlRecipeAConfig,
 };
 use crate::qd::ArchiveConfig;
@@ -277,6 +277,10 @@ pub struct ComparisonOptions {
     /// Optional Gaussian proposal expansion for H7. `None` uses the raw seed
     /// bank (the mined-seed fallback).
     pub proposal: Option<ProposalConfig>,
+    /// Run the H2-style terminal LM/needle finish on H3–H6 as well.
+    /// H2 always finishes and H7 uses `finish_h7`, so this is the terminal
+    /// ablation switch for the other fixed-width arms.
+    pub finish_h3_h6: bool,
     /// Run the H2-style terminal LM/needle finish on H7 as well.
     pub finish_h7: bool,
     /// Insertion cap passed to the H2/H7 terminal finish.
@@ -298,6 +302,7 @@ impl Default for ComparisonOptions {
             seeds: Vec::new(),
             seed_fraction: 1.0,
             proposal: None,
+            finish_h3_h6: false,
             finish_h7: false,
             terminal_insertions: 20,
         }
@@ -311,6 +316,10 @@ pub struct ComparisonRun {
     pub result: RecipeAResult,
     /// Solver-evaluation counter after the arm, including LM evals.
     pub evaluations: usize,
+    /// Terminal finish report when the arm ran one. H2 always reports it;
+    /// H3–H6 report it when `finish_h3_h6` is set; H7 reports it when
+    /// `finish_h7` is set.
+    pub terminal: Option<TerminalReport>,
 }
 
 /// Dispatch one E09 H0–H7 arm through the engine that implements it.
@@ -328,6 +337,22 @@ pub fn run_comparison_arm(
     options: &ComparisonOptions,
 ) -> Result<ComparisonRun, String> {
     evaluator.reset_evaluations();
+    let fixed_terminal = options.finish_h3_h6
+        && matches!(
+            arm,
+            ComparisonArm::H3 | ComparisonArm::H4 | ComparisonArm::H5 | ComparisonArm::H6
+        );
+    if (arm == ComparisonArm::H2
+        || fixed_terminal
+        || (arm == ComparisonArm::H7 && options.finish_h7))
+        && options.operator.is_none()
+    {
+        return Err(format!(
+            "{} terminal finish needs a memetic operator",
+            arm.label()
+        ));
+    }
+
     let result = match arm {
         ComparisonArm::H0 => {
             if options.initial_genomes.is_empty() {
@@ -363,11 +388,7 @@ pub fn run_comparison_arm(
             }
         }
         ComparisonArm::H2 => {
-            let operator = options
-                .operator
-                .as_ref()
-                .ok_or_else(|| "H2 needs a memetic operator for the terminal finish".to_string())?;
-            let result = if options.initial_genomes.is_empty() {
+            if options.initial_genomes.is_empty() {
                 run_recipe_a(decoder, template, evaluator, &options.recipe)?
             } else {
                 run_recipe_a_seeded(
@@ -377,16 +398,7 @@ pub fn run_comparison_arm(
                     &options.recipe,
                     &options.initial_genomes,
                 )?
-            };
-            let (finished, _) = finish_recipe_a(
-                decoder,
-                template,
-                evaluator,
-                result,
-                operator,
-                options.terminal_insertions,
-            )?;
-            finished
+            }
         }
         ComparisonArm::H3 => {
             let operator = options
@@ -492,7 +504,7 @@ pub fn run_comparison_arm(
             if options.seeds.is_empty() {
                 return Err("H7 needs a non-empty mined-seed bank".into());
             }
-            let result = if let Some(proposal) = options.proposal {
+            if let Some(proposal) = options.proposal {
                 run_recipe_a_vl_proposed(
                     decoder,
                     template,
@@ -511,31 +523,36 @@ pub fn run_comparison_arm(
                     &options.seeds,
                     options.seed_fraction,
                 )?
-            };
-            if options.finish_h7 {
-                let operator = options
-                    .operator
-                    .as_ref()
-                    .ok_or_else(|| "H7 terminal finish needs a memetic operator".to_string())?;
-                finish_recipe_a(
-                    decoder,
-                    template,
-                    evaluator,
-                    result,
-                    operator,
-                    options.terminal_insertions,
-                )?
-                .0
-            } else {
-                result
             }
         }
+    };
+
+    let (result, terminal) = if arm == ComparisonArm::H2
+        || fixed_terminal
+        || (arm == ComparisonArm::H7 && options.finish_h7)
+    {
+        let operator = options
+            .operator
+            .as_ref()
+            .ok_or_else(|| format!("{} terminal finish needs a memetic operator", arm.label()))?;
+        let (finished, report) = finish_recipe_a(
+            decoder,
+            template,
+            evaluator,
+            result,
+            operator,
+            options.terminal_insertions,
+        )?;
+        (finished, Some(report))
+    } else {
+        (result, None)
     };
     let evaluations = evaluator.evaluations();
     Ok(ComparisonRun {
         arm,
         result,
         evaluations,
+        terminal,
     })
 }
 
@@ -934,6 +951,7 @@ mod tests {
                 noise_sigma: 0.1,
                 proposals_per_seed: 1,
             }),
+            finish_h3_h6: false,
             finish_h7: false,
             terminal_insertions: 4,
         }
@@ -1097,6 +1115,7 @@ mod tests {
         .unwrap();
         assert!(run.result.merit.is_finite());
         assert!(run.evaluations > 0);
+        assert!(run.terminal.is_some());
 
         options.operator = None;
         let error = run_comparison_arm(
@@ -1108,6 +1127,34 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.contains("terminal finish"));
+    }
+
+    #[test]
+    fn fixed_width_arms_report_terminal_certificate_when_enabled() {
+        for arm in [
+            ComparisonArm::H3,
+            ComparisonArm::H4,
+            ComparisonArm::H5,
+            ComparisonArm::H6,
+        ] {
+            let problem = problem();
+            let mut evaluator = problem.evaluator.clone();
+            let mut options = comparison_options(&problem);
+            options.finish_h3_h6 = true;
+            let run = run_comparison_arm(
+                &problem.decoder,
+                &problem.template,
+                &mut evaluator,
+                arm,
+                &options,
+            )
+            .unwrap_or_else(|error| panic!("{} terminal dispatch failed: {error}", arm.label()));
+            let report = run
+                .terminal
+                .unwrap_or_else(|| panic!("{} did not report a terminal finish", arm.label()));
+            assert_eq!(report.actual_improving_after, 0, "{}", arm.label());
+            assert!(report.final_merit.is_finite(), "{}", arm.label());
+        }
     }
 
     #[test]
