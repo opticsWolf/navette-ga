@@ -118,6 +118,7 @@ fn main() {
     let args = std::env::args().collect::<Vec<_>>();
     let seed_count = number(&args, "--seeds", 7).clamp(1, 20);
     let max_layers = number(&args, "--max-layers", 40).clamp(2, 60);
+    let terminal_insertions = number(&args, "--terminal-insertions", 10).clamp(1, 100);
     let fixture = args
         .iter()
         .position(|arg| arg == "--fixture")
@@ -144,7 +145,7 @@ fn main() {
     let pool = decoder_pool(&loaded).unwrap();
     let decoder = Decoder::without_constraints(pool)
         .unwrap()
-        .with_max_layers(60);
+        .with_max_layers((max_layers + 2 * terminal_insertions).max(60));
     let ambient = LayerSpec::constant("air", 1.0, 0.0, 0.0, wavelengths.len());
     let substrate = LayerSpec::constant("substrate", 1.52, 0.0, 0.0, wavelengths.len());
     let template = stack_template(ambient.clone(), substrate.clone(), &loaded).unwrap();
@@ -238,7 +239,7 @@ fn main() {
             proposals_per_seed: 4,
         }),
         finish_h7: true,
-        terminal_insertions: 10,
+        terminal_insertions,
         ..ComparisonOptions::default()
     };
     let seeds = (0..seed_count)

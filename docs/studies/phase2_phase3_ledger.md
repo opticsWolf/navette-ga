@@ -397,9 +397,10 @@ long-pass filter.
 H2 and H7 both succeed on 7/7 target runs: H2 ERT `2,549.4`, H7 ERT
 `3,409.6`; every other arm is `none`. Their optical quality is excellent
 (0.077 % / 0.024 % pass, 99.88 % / 99.94 % stop), but at the default 40-layer
-GA cap neither reaches the 40-layer deep-screen threshold.
+GA cap and 10 terminal insertions neither reaches the 40-layer deep-screen
+threshold.
 
-A cap sweep (`--max-layers`, applied to H0/H1/H2) changes the conclusion:
+A cap sweep (`--max-layers`, applied to H0/H1/H2) shows the cap is binding:
 
 | H2 cap | best merit | median merit | layers | pass R | stop R | ERT | deep |
 |---:|---:|---:|---:|---:|---:|---:|---|
@@ -408,16 +409,28 @@ A cap sweep (`--max-layers`, applied to H0/H1/H2) changes the conclusion:
 | 44 | **51.751173** | 1,720.715296 | **40** | **0.0655 %** | **99.9282 %** | 3,035.0 | **yes** |
 
 H7 stays at 38 layers for all three caps; its seeded bank does not grow
-further. The earlier “negative depth transfer” reading was therefore
-**cap-limited**: the default 40 cap is binding for H2 on short-pass, and with
-a 44-layer cap the GA finds a 40-layer, deep-screen-passing short-pass stack.
-The required GA width is target-specific, but the 40-layer count itself is
-reachable. H2 and H7 still separate from the other arms, but not from each
-other.
+further. A deeper terminal pass is stronger still. With
+`--terminal-insertions 20` (the example auto-sizes the decoder width to
+`max_layers + 2 * terminal_insertions`):
 
-The 28-pair family has 23 significant pairs. The five exceptions are H0–H3
-(`0.6976`), H1–H4 (`1.0000`), H1–H5 (`0.9528`), H2–H7 (`1.0000`), and
-H4–H5 (`0.8345`). H2 and H7 are again not separable from each other.
+| arm | best merit | median merit | layers | pass R | stop R | min nm | ERT | deep |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| H2 | **0.318412** | 3.979435 | **60** | **0.0068 %** | **99.9979 %** | 10.43 | 2,447.3 | **yes** |
+| H7 | **1.205753** | 17.807345 | **55** | **0.0116 %** | **99.9932 %** | 10.00 | 3,233.4 | **yes** |
+
+Both arms now pass the deep screen on 7/7 target runs. H2 is GA-initialized
+with no mined seed bank; H7 starts from the 40-layer chirped seed. The earlier
+“negative depth transfer” reading was **budget-limited**, not target-limited:
+the default 40-layer GA cap and 10-insertion terminal pass were binding. The
+required GA width and terminal budget are target-specific, but the 40-layer
+count itself is reachable on this fixture; H2 reaches 60 layers at 0.0068 %
+pass / 99.9979 % stop. H2 and H7 still separate from the other arms, but not
+from each other.
+
+The 28-pair family at the default terminal budget has 23 significant pairs.
+The five exceptions are H0–H3 (`0.6976`), H1–H4 (`1.0000`), H1–H5
+(`0.9528`), H2–H7 (`1.0000`), and H4–H5 (`0.8345`); the deeper H2/H7 rows do
+not change the separation pattern.
 
 ## Phase 3 — H0–H7 dispatch and campaign loop
 

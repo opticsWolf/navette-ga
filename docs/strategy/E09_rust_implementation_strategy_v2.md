@@ -89,11 +89,15 @@ amendments are implemented by the owner, never requested.*
   28-pair family has 24 Holm-significant pairs; only H1–H4, H1–H5, H1–H6, and
   H2–H7 fail to separate. A third short-pass fixture gives H2 35 layers at
   0.0772 % / 99.8788 % and H7 38 layers at 0.0236 % / 99.9365 % at the
-  default 40-layer cap; both succeed on 7/7 target runs but miss the deep
-  screen. A cap sweep shows H2 at 39 layers with a 42 cap and 40 layers /
-  0.0655 % / 99.9282 % (deep) with a 44 cap, while H7 stays at 38. The
-  earlier negative depth-transfer reading was cap-limited: the GA width
-  needed is target-specific, but the 40-layer short-pass design is reachable.
+  default 40-layer GA cap and 10 terminal insertions; both succeed on 7/7
+  target runs but miss the deep screen. The cap and terminal budgets are the
+  binding constraints: H2 reaches 39 layers with a 42 cap, 40 layers with a
+  44 cap, and with `--terminal-insertions 20` H2 reaches 60 layers at
+  0.0068 % / 99.9979 % while H7 reaches 55 layers at 0.0116 % / 99.9932 %;
+  both then pass the deep screen on 7/7 target runs. The earlier negative
+  depth-transfer reading was budget-limited, not target-limited. The GA width
+  and terminal budget needed are target-specific, but the 40-layer count
+  itself is reachable.
   The short-pass family has 23 significant pairs; H0–H3, H1–H4, H1–H5,
   H2–H7, and H4–H5 do not separate. The H7 diffusion proposal is not
   implemented.
