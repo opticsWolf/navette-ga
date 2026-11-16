@@ -49,7 +49,9 @@ insert/migrate grammar hook) and a true learned H7 diffusion proposal remain.
 A needle-grown 40-layer filter, seeded two-layer starts that grow H2 to
 62–64 layers, a GA-initialized 43-layer H2 deep filter, the seeded 40-layer
 artifact, the depth bake, and three H0–H7 fixtures (C00, long-pass,
-short-pass) are recorded in the ledger.
+short-pass) are recorded in the ledger. The architecture/evidence analysis is
+`docs/studies/h0_h7_implementation_learnings.md`; it records the terminal
+budget, seven-seed, and all-arm seeding limits.
 The mid-loop schedule has one C00 overhead measurement, not a controlled arm
 result. Consumer-side A4 is now
 enforced on every GA/terminal/joint path; the earlier C00 ledger was

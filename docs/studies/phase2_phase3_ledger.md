@@ -706,6 +706,25 @@ kurobako `Problem` over a fixed Recipe A space: two parameters per layer
 problem uses the same decoder/template/evaluator as the GA, so a solver is
 measured on the same physics.
 
+## Implementation learnings and plan update (2026-11-16)
+
+The detailed analysis is `docs/studies/h0_h7_implementation_learnings.md`
+(KG concept `h0_h7_implementation_learnings`, 87 chunks). The adopted plan
+changes are:
+
+- Keep H0–H7 as pinned presets but treat representation, initialization,
+  refinement, population, evaluation, and proposal as separate axes.
+- H1/H2/H7 are seeded; H0/H3–H6 are still random-start. The two-layer table is
+  not an all-arm result until targeted initial-population plumbing lands.
+- Terminal needle/LM is the dominant deep-filter mechanism; report its
+  insertion budget and decoder width with every depth claim.
+- Depth is cap/terminal-budget-limited; 40 layers is a target-specific screen,
+  not a universal threshold.
+- H6 is a linear screen, not GP; H7 is seeded VL plus Gaussian perturbation,
+  not diffusion.
+- Seven seeds are the minimum for a 28-pair Holm family; five-seed families
+  are descriptive only.
+
 Limitations: the C00 H0–H7 campaign is ten seeds on one fixture and one fixed
 target; the significant pairs are a within-fixture result, not a universal
 ranking; the kurobako registration is a problem definition; the archive illumination is not
@@ -715,7 +734,8 @@ target and a 5k LM cap; the seeded 40-layer filter is a stack plus LM, and
 the needle-grown 40-layer result is seed-initialized, not a GA discovery; the
 equal-budget H0/H1 result is five seeds on one target; the
 H7 arm is a mined-seed fallback, not a diffusion implementation; H6 is a
-linear screen, not a GP; navette-native A4 and the released-navette gate
-remain open. The core `ndarray` lift (`c9e964d`) resolves the earlier
+linear screen, not a GP; only H1/H2/H7 have the two-layer seed path; an
+all-arm seeded-start campaign, navette-native A4, and the released-navette
+gate remain open. The core `ndarray` lift (`c9e964d`) resolves the earlier
 navette/moors array-major split; it is a dependency-major change for the next
 navette release.

@@ -112,10 +112,51 @@ amendments are implemented by the owner, never requested.*
   expected to fail verification meanwhile.
 - **Remaining:** an optional nalgebra `DMatrix` adapter (not required),
   navette-native A4 (per-material bounds and insert/migrate grammar hook), the
-  H7 diffusion proposal and the multi-seed equal-compute H0/H1/H3 campaign;
-  the released-navette gate remains. C00, long-pass, and short-pass H0–H7
-  campaigns are recorded. A needle-grown 40-layer filter, a GA-initialized 43-layer H2 deep
-  filter, the seeded 40-layer artifact, and the filter depth bake exist.
+  H7 diffusion proposal, the multi-seed equal-compute H0/H1/H3 campaign, and a
+  full all-arm seeded-start campaign (requires targeted H0/H3–H6
+  initial-population plumbing); the released-navette gate remains. C00,
+  long-pass, and short-pass H0–H7 campaigns are recorded. A needle-grown
+  40-layer filter, a GA-initialized 43-layer H2 deep filter, the seeded
+  40-layer artifact, and the filter depth bake exist.
+
+## Planning update (2026-11-16)
+
+The H0–H7 implementation analysis is
+`docs/studies/h0_h7_implementation_learnings.md` (knowledge-graph concept
+`h0_h7_implementation_learnings`, 87 chunks). It changes the plan in six ways:
+
+1. **Axes, not more bundled arms.** H0–H7 remain pinned presets for published
+   comparability, but they bundle representation, initialization, refinement,
+   population, evaluation, and proposal. Future engine work should expose
+   these as orthogonal configuration; a new comparison should add a factor,
+   not another bundled arm.
+2. **Initial layers are not genome width.** `--max-layers 2` was a width cap,
+   not a two-layer start. H1/H2 use
+   `run_recipe_a_seeded` / `ComparisonOptions::initial_genomes`; H0/H3–H6
+   still lack that path. A full all-arm two-layer campaign does not yet exist
+   and must not be claimed.
+3. **Terminal refinement is a first-class factor.** H2/H7 deep-filter results
+   depend on terminal needle/LM; H3–H6 have no terminal in the dispatcher.
+   Every depth report must carry insertion budget, decoder width, final
+   layers, minimum thickness, true evaluations, and certificate status.
+4. **Depth is budget-limited before it is target-limited.** Short-pass moves
+   from 35 to 40 to 60 layers under cap/terminal changes. Forty layers is a
+   target-specific screen, not a universal quality threshold; report optical
+   quality and layer count separately.
+5. **Model and statistics honesty.** H6 is linear ridge, not GP; H7 is seeded
+   VL plus Gaussian perturbation, not diffusion. Seven seeds are the minimum
+   for a 28-pair Holm family; five seeds cannot produce a significant pair
+   even under complete separation.
+6. **A4 invariants are architecture.** Material order, transactional
+   insertion, LM x0 floors, and evaluator/decoder bound alignment are
+   correctness contracts; navette-native A4 and the release gate remain.
+
+**Adopted plan changes:** next campaigns report the budget box and use the
+seven-seed floor; prioritize cross-factor experiments (fixed/VL × terminal,
+VL × islands/archive, surrogate × terminal, all-arm seeded starts) over new H
+arms; never describe H6 as GP or H7 as diffusion; add targeted
+initial-population plumbing for H0/H3–H6 only when an all-arm seeded
+experiment is scheduled. This is a plan revision, not a config-wide refactor.
 
 ## 0. What navette already is (and why the strategy collapses around it)
 
