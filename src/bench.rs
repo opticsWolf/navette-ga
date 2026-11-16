@@ -19,8 +19,10 @@ use trackable::error::ErrorKindExt;
 use crate::bridge::{FitnessEvaluator, MemeticOperator, StackTemplate};
 use crate::decoder::{Decoder, Genome, LayerGene};
 use crate::engines::{
-    finish_recipe_a, run_h0_control, run_recipe_a, run_recipe_a_illuminated, run_recipe_a_memetic,
-    run_recipe_a_seeded, run_recipe_a_surrogate, run_recipe_a_tribes, run_recipe_a_vl_proposed,
+    finish_recipe_a, run_h0_control, run_h0_control_seeded, run_recipe_a, run_recipe_a_illuminated,
+    run_recipe_a_illuminated_seeded, run_recipe_a_memetic, run_recipe_a_memetic_seeded,
+    run_recipe_a_seeded, run_recipe_a_surrogate, run_recipe_a_surrogate_seeded,
+    run_recipe_a_tribes, run_recipe_a_tribes_seeded, run_recipe_a_vl_proposed,
     run_recipe_a_vl_seeded, H0Config, HeterogeneousTribeConfig, IslandRecipeConfig, IslandStrategy,
     MemeticSchedule, ProposalConfig, RecipeAConfig, RecipeAResult, SurrogateConfig,
     TribeConstraint, VlRecipeAConfig,
@@ -265,8 +267,10 @@ pub struct ComparisonOptions {
     pub surrogate: SurrogateConfig,
     pub archive: ArchiveConfig,
     pub operator: Option<MemeticOperator>,
-    /// Initial fixed-width genomes for H1/H2. Each is padded with inactive
-    /// slots up to `recipe.max_layers`; empty keeps random initialization.
+    /// Initial fixed-width genomes for H0–H6. Each is padded with inactive
+    /// slots up to the arm's width; empty keeps random initialization. H0
+    /// uses the first genome as one seeded start and the remaining starts at
+    /// random; H7 uses `seeds` instead.
     pub initial_genomes: Vec<Genome>,
     pub seeds: Vec<Genome>,
     pub seed_fraction: f64,
@@ -325,13 +329,26 @@ pub fn run_comparison_arm(
 ) -> Result<ComparisonRun, String> {
     evaluator.reset_evaluations();
     let result = match arm {
-        ComparisonArm::H0 => run_h0_control(
-            decoder,
-            template,
-            evaluator,
-            &options.h0,
-            options.operator.as_ref(),
-        )?,
+        ComparisonArm::H0 => {
+            if options.initial_genomes.is_empty() {
+                run_h0_control(
+                    decoder,
+                    template,
+                    evaluator,
+                    &options.h0,
+                    options.operator.as_ref(),
+                )?
+            } else {
+                run_h0_control_seeded(
+                    decoder,
+                    template,
+                    evaluator,
+                    &options.h0,
+                    options.operator.as_ref(),
+                    &options.initial_genomes,
+                )?
+            }
+        }
         ComparisonArm::H1 => {
             if options.initial_genomes.is_empty() {
                 run_recipe_a(decoder, template, evaluator, &options.recipe)?
@@ -376,15 +393,28 @@ pub fn run_comparison_arm(
                 .operator
                 .as_ref()
                 .ok_or_else(|| "H3 needs a memetic operator".to_string())?;
-            run_recipe_a_memetic(
-                decoder,
-                template,
-                evaluator,
-                &options.recipe,
-                operator,
-                &options.memetic,
-            )?
-            .best
+            if options.initial_genomes.is_empty() {
+                run_recipe_a_memetic(
+                    decoder,
+                    template,
+                    evaluator,
+                    &options.recipe,
+                    operator,
+                    &options.memetic,
+                )?
+                .best
+            } else {
+                run_recipe_a_memetic_seeded(
+                    decoder,
+                    template,
+                    evaluator,
+                    &options.recipe,
+                    operator,
+                    &options.memetic,
+                    &options.initial_genomes,
+                )?
+                .best
+            }
         }
         ComparisonArm::H4 => {
             let count = options.islands.islands;
@@ -395,38 +425,68 @@ pub fn run_comparison_arm(
                 })
                 .collect::<Vec<_>>();
             let constraints = vec![TribeConstraint::default(); count];
-            run_recipe_a_tribes(
-                decoder,
-                template,
-                evaluator,
-                &options.recipe,
-                &HeterogeneousTribeConfig {
-                    islands: options.islands.clone(),
-                    strategies,
-                    constraints,
-                },
-            )?
-            .best
+            let tribes = HeterogeneousTribeConfig {
+                islands: options.islands.clone(),
+                strategies,
+                constraints,
+            };
+            if options.initial_genomes.is_empty() {
+                run_recipe_a_tribes(decoder, template, evaluator, &options.recipe, &tribes)?.best
+            } else {
+                run_recipe_a_tribes_seeded(
+                    decoder,
+                    template,
+                    evaluator,
+                    &options.recipe,
+                    &tribes,
+                    &options.initial_genomes,
+                )?
+                .best
+            }
         }
         ComparisonArm::H5 => {
-            run_recipe_a_illuminated(
-                decoder,
-                template,
-                evaluator,
-                &options.recipe,
-                options.archive,
-            )?
-            .best
+            if options.initial_genomes.is_empty() {
+                run_recipe_a_illuminated(
+                    decoder,
+                    template,
+                    evaluator,
+                    &options.recipe,
+                    options.archive,
+                )?
+                .best
+            } else {
+                run_recipe_a_illuminated_seeded(
+                    decoder,
+                    template,
+                    evaluator,
+                    &options.recipe,
+                    options.archive,
+                    &options.initial_genomes,
+                )?
+                .best
+            }
         }
         ComparisonArm::H6 => {
-            run_recipe_a_surrogate(
-                decoder,
-                template,
-                evaluator,
-                &options.recipe,
-                options.surrogate,
-            )?
-            .best
+            if options.initial_genomes.is_empty() {
+                run_recipe_a_surrogate(
+                    decoder,
+                    template,
+                    evaluator,
+                    &options.recipe,
+                    options.surrogate,
+                )?
+                .best
+            } else {
+                run_recipe_a_surrogate_seeded(
+                    decoder,
+                    template,
+                    evaluator,
+                    &options.recipe,
+                    options.surrogate,
+                    &options.initial_genomes,
+                )?
+                .best
+            }
         }
         ComparisonArm::H7 => {
             if options.seeds.is_empty() {
@@ -896,6 +956,33 @@ mod tests {
             assert_eq!(run.arm, arm);
             assert!(run.result.merit.is_finite(), "{} merit", arm.label());
             assert!(run.evaluations > 0, "{} evaluations", arm.label());
+        }
+    }
+
+    #[test]
+    fn seeded_fixed_width_arms_accept_a_two_layer_start() {
+        let seed = Genome::from(vec![LayerGene::new(0.25, 0.5, 1.0)]);
+        for arm in [
+            ComparisonArm::H0,
+            ComparisonArm::H3,
+            ComparisonArm::H4,
+            ComparisonArm::H5,
+            ComparisonArm::H6,
+        ] {
+            let problem = problem();
+            let mut evaluator = problem.evaluator.clone();
+            let mut options = comparison_options(&problem);
+            options.initial_genomes = vec![seed.clone()];
+            let run = run_comparison_arm(
+                &problem.decoder,
+                &problem.template,
+                &mut evaluator,
+                arm,
+                &options,
+            )
+            .unwrap_or_else(|error| panic!("{} seeded dispatch failed: {error}", arm.label()));
+            assert_eq!(run.arm, arm);
+            assert!(run.result.merit.is_finite(), "{} merit", arm.label());
         }
     }
 

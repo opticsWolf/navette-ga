@@ -737,6 +737,33 @@ fn genome_to_dna(genome: &Genome) -> Vec<KeyGene> {
         .collect()
 }
 
+/// Pad a seed with inactive slots so a fixed-width engine can consume it.
+/// The active genes keep their material/thickness keys; only presence is zero
+/// on the added slots, so decoding starts at the seed's effective length.
+fn padded_genome(genome: &Genome, width: usize) -> Result<Genome, String> {
+    if genome.is_empty() {
+        return Err("seeded initial genome is empty".into());
+    }
+    if genome.len() > width {
+        return Err(format!(
+            "seeded initial genome has {} layers, above the width {width}",
+            genome.len()
+        ));
+    }
+    let mut rng = make_rng();
+    let mut dna = genome_to_dna(genome);
+    while dna.len() < width {
+        let mut padding = KeyGene::random(&mut rng);
+        padding.presence = 0.0;
+        dna.push(padding);
+    }
+    Ok(Genome::from(
+        dna.into_iter()
+            .map(|gene| LayerGene::new(gene.material, gene.thickness, gene.presence))
+            .collect::<Vec<_>>(),
+    ))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_recipe_a_ga(
     cfg: &RecipeAConfig,
@@ -1052,7 +1079,7 @@ fn island_divergence(populations: &[Population<LayerChromosome>], pool_len: usiz
     }
 }
 
-/// Run the H0 control: independent random starts, LM, and optional needle.
+/// Run the H0 control: independent starts, LM, and optional needle.
 ///
 /// The returned [`RecipeAResult`] uses the same shape as a GA run, so the
 /// comparison harness can report it without a second result type.
@@ -1063,7 +1090,35 @@ pub fn run_h0_control(
     cfg: &H0Config,
     operator: Option<&MemeticOperator>,
 ) -> Result<RecipeAResult, String> {
-    run_h0_control_inner(decoder, template, evaluator, cfg, operator, None)
+    run_h0_control_inner(decoder, template, evaluator, cfg, operator, None, None)
+}
+
+/// Run H0 with the first start supplied by a seed and the rest random.
+///
+/// This keeps H0's multi-start character while giving it the same two-layer
+/// genome that the fixed-width GA arms receive. The seed is padded with
+/// inactive slots to `cfg.max_layers`; subsequent starts are ordinary random
+/// starts. This is the H0 path for an all-arm seeded comparison.
+pub fn run_h0_control_seeded(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &mut FitnessEvaluator,
+    cfg: &H0Config,
+    operator: Option<&MemeticOperator>,
+    initial_genomes: &[Genome],
+) -> Result<RecipeAResult, String> {
+    if initial_genomes.is_empty() {
+        return Err("seeded H0 needs at least one initial genome".into());
+    }
+    run_h0_control_inner(
+        decoder,
+        template,
+        evaluator,
+        cfg,
+        operator,
+        None,
+        Some(initial_genomes),
+    )
 }
 
 /// H0 with a solver-evaluation budget.
@@ -1083,7 +1138,15 @@ pub fn run_h0_control_budget(
     if budget == 0 {
         return Err("H0 budget must be >= 1".into());
     }
-    run_h0_control_inner(decoder, template, evaluator, cfg, operator, Some(budget))
+    run_h0_control_inner(
+        decoder,
+        template,
+        evaluator,
+        cfg,
+        operator,
+        Some(budget),
+        None,
+    )
 }
 
 fn run_h0_control_inner(
@@ -1093,6 +1156,7 @@ fn run_h0_control_inner(
     cfg: &H0Config,
     operator: Option<&MemeticOperator>,
     budget: Option<usize>,
+    initial_genomes: Option<&[Genome]>,
 ) -> Result<RecipeAResult, String> {
     if cfg.starts == 0 {
         return Err("H0 needs at least one start".into());
@@ -1104,6 +1168,23 @@ fn run_h0_control_inner(
         return Err("H0 mutation_sigma must be finite and positive".into());
     }
     template.check_grammar(decoder.pool(), decoder.grammar())?;
+    if let Some(genomes) = initial_genomes {
+        if genomes.is_empty() {
+            return Err("seeded H0 needs at least one initial genome".into());
+        }
+        for (index, genome) in genomes.iter().enumerate() {
+            if genome.is_empty() {
+                return Err(format!("seeded H0 initial genome {index} is empty"));
+            }
+            if genome.len() > cfg.max_layers {
+                return Err(format!(
+                    "seeded H0 initial genome {index} has {} layers, above the width {}",
+                    genome.len(),
+                    cfg.max_layers
+                ));
+            }
+        }
+    }
     set_seed(cfg.seed);
     let mut best: Option<(
         f64,
@@ -1111,19 +1192,24 @@ fn run_h0_control_inner(
         DecodedStack,
         navette::smatrix::synthesis::structure::DesignStack,
     )> = None;
-    for _ in 0..cfg.starts {
+    for start in 0..cfg.starts {
         if budget.is_some_and(|budget| evaluator.evaluations() >= budget) {
             break;
         }
-        let mut rng = make_rng();
-        let genome = Genome::from(
-            (0..cfg.max_layers)
-                .map(|_| {
-                    let gene = KeyGene::random(&mut rng);
-                    LayerGene::new(gene.material, gene.thickness, gene.presence)
-                })
-                .collect::<Vec<_>>(),
-        );
+        let genome = match initial_genomes.and_then(|genomes| genomes.get(start)) {
+            Some(seed) => padded_genome(seed, cfg.max_layers)?,
+            None => {
+                let mut rng = make_rng();
+                Genome::from(
+                    (0..cfg.max_layers)
+                        .map(|_| {
+                            let gene = KeyGene::random(&mut rng);
+                            LayerGene::new(gene.material, gene.thickness, gene.presence)
+                        })
+                        .collect::<Vec<_>>(),
+                )
+            }
+        };
         let decoded = match decoder.decode(&genome) {
             Ok(decoded) => decoded,
             Err(_) => continue,
@@ -1178,10 +1264,49 @@ pub fn run_recipe_a_illuminated(
     cfg: &RecipeAConfig,
     archive_cfg: ArchiveConfig,
 ) -> Result<IlluminatedResult, String> {
+    run_recipe_a_illuminated_with_seeds(decoder, template, evaluator, cfg, archive_cfg, None)
+}
+
+/// Run the illuminated MOME arm from supplied fixed-width genomes.
+///
+/// The archive still records rather than steers selection; only the initial
+/// population changes. This is the H5 path for an all-arm seeded comparison.
+pub fn run_recipe_a_illuminated_seeded(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    cfg: &RecipeAConfig,
+    archive_cfg: ArchiveConfig,
+    initial_genomes: &[Genome],
+) -> Result<IlluminatedResult, String> {
+    if initial_genomes.is_empty() {
+        return Err("seeded H5 needs at least one initial genome".into());
+    }
+    run_recipe_a_illuminated_with_seeds(
+        decoder,
+        template,
+        evaluator,
+        cfg,
+        archive_cfg,
+        Some(initial_genomes),
+    )
+}
+
+fn run_recipe_a_illuminated_with_seeds(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    cfg: &RecipeAConfig,
+    archive_cfg: ArchiveConfig,
+    initial_genomes: Option<&[Genome]>,
+) -> Result<IlluminatedResult, String> {
     validate_recipe_a(cfg)?;
     template.check_grammar(decoder.pool(), decoder.grammar())?;
     let mut archive = MomeArchive::new(archive_cfg)?;
-    let mut population = initial_population(cfg, cfg.seed);
+    let mut population = match initial_genomes {
+        Some(genomes) => initial_population_seeded(cfg, cfg.seed, genomes)?,
+        None => initial_population(cfg, cfg.seed),
+    };
 
     for generation in 0..cfg.generations {
         let seed = cfg
@@ -1410,6 +1535,43 @@ pub fn run_recipe_a_surrogate(
     cfg: &RecipeAConfig,
     surrogate: SurrogateConfig,
 ) -> Result<SurrogateRunResult, String> {
+    run_recipe_a_surrogate_with_seeds(decoder, template, evaluator, cfg, surrogate, None)
+}
+
+/// Run the linear-surrogate arm from supplied fixed-width genomes.
+///
+/// The surrogate still re-evaluates the final best design exactly; only the
+/// initial population changes. This is the H6 path for an all-arm seeded
+/// comparison.
+pub fn run_recipe_a_surrogate_seeded(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    cfg: &RecipeAConfig,
+    surrogate: SurrogateConfig,
+    initial_genomes: &[Genome],
+) -> Result<SurrogateRunResult, String> {
+    if initial_genomes.is_empty() {
+        return Err("seeded H6 needs at least one initial genome".into());
+    }
+    run_recipe_a_surrogate_with_seeds(
+        decoder,
+        template,
+        evaluator,
+        cfg,
+        surrogate,
+        Some(initial_genomes),
+    )
+}
+
+fn run_recipe_a_surrogate_with_seeds(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    cfg: &RecipeAConfig,
+    surrogate: SurrogateConfig,
+    initial_genomes: Option<&[Genome]>,
+) -> Result<SurrogateRunResult, String> {
     validate_recipe_a(cfg)?;
     if surrogate.warmup == 0 || surrogate.sample_every == 0 || surrogate.refit_every == 0 {
         return Err("surrogate warmup/sample/refit intervals must be >= 1".into());
@@ -1455,12 +1617,16 @@ pub fn run_recipe_a_surrogate(
         }
     };
 
+    let population = match initial_genomes {
+        Some(genomes) => Some(initial_population_seeded(cfg, cfg.seed, genomes)?),
+        None => None,
+    };
     let mut ga = build_recipe_a_ga_with_fitness(
         cfg,
         decoder,
         template,
         evaluator,
-        None,
+        population,
         cfg.generations,
         cfg.seed,
         None,
@@ -1672,6 +1838,7 @@ fn run_recipe_a_islands_with_strategies(
     constraints: Option<&[TribeConstraint]>,
     i1: Option<&I1Config>,
     memetic: Option<(&MemeticOperator, &MemeticSchedule)>,
+    initial_genomes: Option<&[Genome]>,
 ) -> Result<IslandRecipeResult, String> {
     validate_recipe_a(cfg)?;
     if let Some((_, schedule)) = memetic {
@@ -1712,9 +1879,12 @@ fn run_recipe_a_islands_with_strategies(
             let seed = cfg
                 .seed
                 .map(|base| base.wrapping_add((island as u64).wrapping_mul(1009)));
-            initial_population(cfg, seed)
+            match initial_genomes {
+                Some(genomes) => initial_population_seeded(cfg, seed, genomes),
+                None => Ok(initial_population(cfg, seed)),
+            }
         })
-        .collect();
+        .collect::<Result<Vec<_>, String>>()?;
     let mut migrations = 0;
     let mut crossovers = 0;
     let mut memetic_report = MemeticRunReport::default();
@@ -2047,11 +2217,54 @@ pub fn run_recipe_a_memetic(
     operator: &MemeticOperator,
     schedule: &MemeticSchedule,
 ) -> Result<MemeticRunResult, String> {
+    run_recipe_a_memetic_with_seeds(decoder, template, evaluator, cfg, operator, schedule, None)
+}
+
+/// Run the mid-loop memetic arm from supplied fixed-width genomes.
+///
+/// The seed is padded with inactive slots to the recipe width and the rest of
+/// the population is diversified from that seed. This is the H3 path for an
+/// all-arm seeded comparison.
+pub fn run_recipe_a_memetic_seeded(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &mut FitnessEvaluator,
+    cfg: &RecipeAConfig,
+    operator: &MemeticOperator,
+    schedule: &MemeticSchedule,
+    initial_genomes: &[Genome],
+) -> Result<MemeticRunResult, String> {
+    if initial_genomes.is_empty() {
+        return Err("seeded H3 needs at least one initial genome".into());
+    }
+    run_recipe_a_memetic_with_seeds(
+        decoder,
+        template,
+        evaluator,
+        cfg,
+        operator,
+        schedule,
+        Some(initial_genomes),
+    )
+}
+
+fn run_recipe_a_memetic_with_seeds(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &mut FitnessEvaluator,
+    cfg: &RecipeAConfig,
+    operator: &MemeticOperator,
+    schedule: &MemeticSchedule,
+    initial_genomes: Option<&[Genome]>,
+) -> Result<MemeticRunResult, String> {
     validate_recipe_a(cfg)?;
     validate_memetic_schedule(cfg, schedule)?;
     template.check_grammar(decoder.pool(), decoder.grammar())?;
 
-    let mut population = initial_population(cfg, cfg.seed);
+    let mut population = match initial_genomes {
+        Some(genomes) => initial_population_seeded(cfg, cfg.seed, genomes)?,
+        None => initial_population(cfg, cfg.seed),
+    };
     let mut report = MemeticRunReport::default();
     for generation in 0..cfg.generations {
         let seed = cfg.seed.map(|base| {
@@ -2202,6 +2415,37 @@ pub fn run_recipe_a_tribes(
         Some(&tribes.constraints),
         None,
         None,
+        None,
+    )
+}
+
+/// Run the heterogeneous-tribe ring from supplied fixed-width genomes.
+///
+/// Every island starts from the same seed bank with independent diversification
+/// and its own mutation/selection strategy. This is the H4 path for an all-arm
+/// seeded comparison.
+pub fn run_recipe_a_tribes_seeded(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    cfg: &RecipeAConfig,
+    tribes: &HeterogeneousTribeConfig,
+    initial_genomes: &[Genome],
+) -> Result<IslandRecipeResult, String> {
+    if initial_genomes.is_empty() {
+        return Err("seeded H4 needs at least one initial genome".into());
+    }
+    run_recipe_a_islands_with_strategies(
+        decoder,
+        template,
+        evaluator,
+        cfg,
+        &tribes.islands,
+        Some(&tribes.strategies),
+        Some(&tribes.constraints),
+        None,
+        None,
+        Some(initial_genomes),
     )
 }
 
@@ -2214,7 +2458,7 @@ pub fn run_recipe_a_islands(
     islands: &IslandRecipeConfig,
 ) -> Result<IslandRecipeResult, String> {
     run_recipe_a_islands_with_strategies(
-        decoder, template, evaluator, cfg, islands, None, None, None, None,
+        decoder, template, evaluator, cfg, islands, None, None, None, None, None,
     )
 }
 
@@ -2243,6 +2487,7 @@ pub fn run_recipe_a_islands_memetic(
         None,
         None,
         Some((operator, schedule)),
+        None,
     )
 }
 
@@ -2357,6 +2602,7 @@ pub fn run_recipe_a_i1(
         None,
         Some(i1),
         None,
+        None,
     )
 }
 
@@ -2376,6 +2622,7 @@ pub fn run_recipe_a_heterogeneous_islands(
         cfg,
         &heterogeneous.islands,
         Some(&heterogeneous.strategies),
+        None,
         None,
         None,
         None,
@@ -3103,6 +3350,18 @@ mod tests {
         let result = run_recipe_a_seeded(&decoder, &template, &evaluator, &cfg, &[seed]).unwrap();
         assert!(result.merit.is_finite());
         assert_eq!(result.best_genome.len(), cfg.max_layers);
+    }
+
+    #[test]
+    fn padded_genome_keeps_the_active_prefix() {
+        let seed = Genome::from(vec![
+            LayerGene::new(0.25, 0.4, 1.0),
+            LayerGene::new(0.75, 0.6, 1.0),
+        ]);
+        let padded = padded_genome(&seed, 6).unwrap();
+        assert_eq!(padded.len(), 6);
+        assert_eq!(&padded.genes()[..2], seed.genes());
+        assert!(padded.genes()[2..].iter().all(|gene| gene.presence == 0.0));
     }
 
     #[test]

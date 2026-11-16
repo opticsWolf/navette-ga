@@ -286,6 +286,16 @@ fn main() {
     let seeds = (0..seed_count)
         .map(|offset| 20261121 + offset as u64)
         .collect::<Vec<_>>();
+    println!(
+        "FILTER_BUDGET fixture={} seeds={} max_layers={} terminal_insertions={} decoder_width={} seed_pairs={} initial_pairs={}",
+        fixture,
+        seed_count,
+        max_layers,
+        terminal_insertions,
+        (max_layers + 2 * terminal_insertions).max(80),
+        seed_pairs,
+        initial_pairs
+    );
     let campaign = run_comparison_campaign(
         &decoder,
         &template,

@@ -27,7 +27,7 @@ amendments are implemented by the owner, never requested.*
   `cycle::joint_needle_scan` and the A2 merit gradient (`d9faa79`); `c9e964d` lifts the core to `ndarray` 0.16 so navette, `moors`, and `navette-ga` share one array major; `5adb40c` clamps the LM start to the policy floor.
 - **`navette-ga`:** G2 decoder, G1 bridge, A1 memetic operator, fixed and
   variable-length Recipe A, the Phase 2 ring, and the new Phase 2/3 modules
-  (`moors_split`, `qd`, `study`, `bench`). Full suite: **84 tests**.
+  (`moors_split`, `qd`, `study`, `bench`). Full suite: **86 tests**.
 - **Phase 1 exit artifact:** G3 rung-2 material loader; terminal LM + needle
   finish with Lamarckian write-back and actual-trial scan certificate;
   C00-class ledger at `docs/studies/phase1_c00_ar.md` (8 layers, avg
@@ -98,26 +98,33 @@ amendments are implemented by the owner, never requested.*
   depth-transfer reading was budget-limited, not target-limited. The GA width
   and terminal budget needed are target-specific, but the 40-layer count
   itself is reachable.
-  The short-pass family has 23 significant pairs; H0–H3, H1–H4, H1–H5,
-  H2–H7, and H4–H5 do not separate. A two-layer-start run
+  The earlier random-start short-pass family has 23 significant pairs;
+  H0–H3, H1–H4, H1–H5, H2–H7, and H4–H5 do not separate. A two-layer-start run
   with `--max-layers 2` leaves H2 at 4/8 layers because the fixed-width
   genome has no spare slots; this was a width confound. Seeding two active
   genes into a 40-slot genome (`run_recipe_a_seeded` /
   `ComparisonOptions::initial_genomes`) lets H2 grow to 64/62 layers and pass
   the deep screen, while H1 reaches 26/18 but stays far from target; H7 still
   reaches 44/73 from its two-layer seed. H2 is GA-initialized plus terminal,
-  H7 is seed-initialized. The H7 diffusion proposal is not implemented.
+  H7 is seed-initialized. The same seed path now covers H0 and H3–H6: on
+  long-pass, H3 reaches 29 layers at 220,526 merit, H4 13 layers, H5 25, and
+  H6 25; on short-pass H3 reaches 25 layers at 189,001, H4 18, H5 22, and H6
+  16. Only H2 and H7 pass the deep screen; seeding does not give H3–H6 the
+  missing terminal growth. H0 keeps the same seven-seed best
+  (1,065,970.763457 long-pass; 650,958.663020 short-pass) because its seeded
+  start is one of several starts. The seven-seed seeded families have 23/28
+  significant Holm pairs on long-pass and 17/28 on short-pass. The H7
+  diffusion proposal is not implemented.
 - **Release gate:** A1/A3/A2 are not in published navette 0.10.0. The bridge
   is local-path-only until a navette release carries them; `cargo publish` is
   expected to fail verification meanwhile.
 - **Remaining:** an optional nalgebra `DMatrix` adapter (not required),
   navette-native A4 (per-material bounds and insert/migrate grammar hook), the
-  H7 diffusion proposal, the multi-seed equal-compute H0/H1/H3 campaign, and a
-  full all-arm seeded-start campaign (requires targeted H0/H3–H6
-  initial-population plumbing); the released-navette gate remains. C00,
-  long-pass, and short-pass H0–H7 campaigns are recorded. A needle-grown
-  40-layer filter, a GA-initialized 43-layer H2 deep filter, the seeded
-  40-layer artifact, and the filter depth bake exist.
+  H7 diffusion proposal, and the multi-seed equal-compute H0/H1/H3 campaign;
+  the released-navette gate remains. C00, long-pass, and short-pass H0–H7
+  campaigns and the seven-seed all-arm seeded-start tables are recorded. A
+  needle-grown 40-layer filter, a GA-initialized 43-layer H2 deep filter, the
+  seeded 40-layer artifact, and the filter depth bake exist.
 
 ## Planning update (2026-11-16)
 
@@ -131,10 +138,11 @@ The H0–H7 implementation analysis is
    these as orthogonal configuration; a new comparison should add a factor,
    not another bundled arm.
 2. **Initial layers are not genome width.** `--max-layers 2` was a width cap,
-   not a two-layer start. H1/H2 use
-   `run_recipe_a_seeded` / `ComparisonOptions::initial_genomes`; H0/H3–H6
-   still lack that path. A full all-arm two-layer campaign does not yet exist
-   and must not be claimed.
+   not a two-layer start. All fixed-width arms now consume
+   `ComparisonOptions::initial_genomes`; H0 uses the first seed as one start
+   and keeps the rest random, H1/H2/H3/H4/H5/H6 seed their populations, and
+   H7 uses its separate seed bank. The seven-seed all-arm tables are in the
+   ledger.
 3. **Terminal refinement is a first-class factor.** H2/H7 deep-filter results
    depend on terminal needle/LM; H3–H6 have no terminal in the dispatcher.
    Every depth report must carry insertion budget, decoder width, final
@@ -154,9 +162,9 @@ The H0–H7 implementation analysis is
 **Adopted plan changes:** next campaigns report the budget box and use the
 seven-seed floor; prioritize cross-factor experiments (fixed/VL × terminal,
 VL × islands/archive, surrogate × terminal, all-arm seeded starts) over new H
-arms; never describe H6 as GP or H7 as diffusion; add targeted
-initial-population plumbing for H0/H3–H6 only when an all-arm seeded
-experiment is scheduled. This is a plan revision, not a config-wide refactor.
+arms; never describe H6 as GP or H7 as diffusion. The targeted
+initial-population plumbing for H0/H3–H6 is implemented as additive arm paths,
+not a config-wide refactor.
 
 ## 0. What navette already is (and why the strategy collapses around it)
 

@@ -10,7 +10,7 @@ repository, and every limitation is listed rather than inferred away.
 - `navette` local `dev_ga` at `5adb40c` (A1/A3, A2 introspection, public
   joint scan, the core `ndarray` 0.16 lift, and the LM x0-floor fix).
 - `navette-ga` single crate, LGPL-3.0-or-later.
-- `cargo test --all-features`: **84 passed**.
+- `cargo test --all-features`: **86 passed**.
 - `cargo clippy --all-targets --all-features -- -D warnings`: clean.
 - `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features`: clean.
 - `navette` with `ga-introspect`: **802 passed, 1 ignored**.
@@ -706,6 +706,82 @@ kurobako `Problem` over a fixed Recipe A space: two parameters per layer
 problem uses the same decoder/template/evaluator as the GA, so a solver is
 measured on the same physics.
 
+## All-arm seeded filter campaign (2026-11-16)
+
+The two-layer seed path now covers every arm through the existing
+`ComparisonOptions::initial_genomes` field, without widening `RecipeAConfig`
+or `H0Config`:
+
+- H0 uses the first seed as one start, pads it with inactive slots to
+  `H0Config::max_layers`, and keeps the remaining starts random.
+- H1/H2/H3/H4/H5/H6 seed their initial populations; H4 seeds every island.
+- H7 continues to use its separate mined-seed bank.
+
+Default behavior is unchanged when `initial_genomes` is empty. The campaign
+command was:
+
+```text
+cargo run --release --features bench --example phase2_filter_campaign --   --seeds 7 --max-layers 40 --seed-pairs 1 --initial-pairs 1   --terminal-insertions 20 --fixture longpass
+```
+
+and the same command with `--fixture shortpass`. The output records the budget
+box explicitly:
+
+```text
+FILTER_BUDGET fixture=longpass seeds=7 max_layers=40 terminal_insertions=20   decoder_width=80 seed_pairs=1 initial_pairs=1
+```
+
+### Long-pass, seven seeds, two-layer start
+
+| arm | best merit | median merit | median evals | layers | pass | stop | deep |
+|---|---:|---:|---:|---:|---:|---:|---|
+| H0 | 1,065,970.763457 | 2,537,335.623404 | 2,401 | 23 | 6.7876 % | 89.6596 % | no |
+| H1 | 5,628,078.588306 | 13,939,695.247669 | 157 | 26 | 35.1856 % | 84.2270 % | no |
+| H2 | 115.468412 | 309.398369 | 2,762 | 64 | 0.0370 % | 99.9045 % | yes |
+| H3 | 220,526.186485 | 730,051.253618 | 181 | 29 | 2.9126 % | 95.2634 % | no |
+| H4 | 8,998,622.288615 | 12,876,160.350723 | 313 | 13 | 15.7756 % | 64.9938 % | no |
+| H5 | 11,983,554.029035 | 13,024,264.812925 | 157 | 25 | 50.6215 % | 76.3019 % | no |
+| H6 | 17,044,481.376999 | 29,802,559.815147 | 52 | 25 | 42.5372 % | 64.1429 % | no |
+| H7 | 546.192961 | 4,107.786077 | 2,418 | 44 | 0.1007 % | 99.7472 % | yes |
+
+ERT: H2 5/7 at 4,577.0; H7 5/7 at 4,149.2; all other arms 0/7. The seeded
+family has 23/28 Holm-significant pairs; the exceptions are H0–H3, H1–H4,
+H1–H5, H2–H7, and H4–H5.
+
+### Short-pass, seven seeds, two-layer start
+
+| arm | best merit | median merit | median evals | layers | pass | stop | deep |
+|---|---:|---:|---:|---:|---:|---:|---|
+| H0 | 650,958.663020 | 2,171,676.756568 | 4,371 | 19 | 4.5360 % | 87.6926 % | no |
+| H1 | 6,231,605.586023 | 9,332,977.163540 | 157 | 18 | 13.1602 % | 55.8288 % | no |
+| H2 | 0.487692 | 6.084052 | 2,237 | 62 | 0.0082 % | 99.9964 % | yes |
+| H3 | 189,000.676487 | 1,458,097.353104 | 181 | 25 | 3.5960 % | 94.9621 % | no |
+| H4 | 5,203,999.394324 | 8,141,431.790922 | 313 | 18 | 9.4378 % | 63.9070 % | no |
+| H5 | 9,597,228.143330 | 10,203,142.690293 | 157 | 22 | 22.9833 % | 60.0022 % | no |
+| H6 | 9,299,826.248700 | 16,591,146.921699 | 52 | 16 | 23.2693 % | 51.1391 % | no |
+| H7 | 8.990342 | 39,111.806852 | 1,494 | 73 | 0.0331 % | 99.9822 % | yes |
+
+ERT: H2 7/7 at 2,210.7; H7 3/7 at 3,162.0; all other arms 0/7. The seeded
+family has 17/28 Holm-significant pairs; H2–H7 separates at adjusted
+p = 0.034965.
+
+### What changed
+
+- H2 and H7 reproduce the earlier seeded two-layer results; their seed paths
+  were already in place.
+- H3 gains the most from the seed: 29/25 layers and 220,526/189,001 merit,
+  but without a terminal finish it still misses the deep screen.
+- H4/H5/H6 remain weak filter optimizers. H6 is worse than its random-start
+  long-pass best, so the linear screen's quality loss persists under seeding.
+- H0's best is unchanged by one seeded start; the other starts still dominate
+  the seven-seed best.
+- Seeding changes the pairwise family: long-pass drops from 24/28 to 23/28
+  significant pairs, short-pass from 23/28 to 17/28, because the fixed-width
+  arms move closer together. The deep-screen conclusion is unchanged: only
+  the terminal arms H2/H7 cross it.
+- This is still not a full factorial design. It holds the seed, cap, terminal
+  budget, and evaluation budget fixed and changes only the initialization.
+
 ## Implementation learnings and plan update (2026-11-16)
 
 The detailed analysis is `docs/studies/h0_h7_implementation_learnings.md`
@@ -714,8 +790,9 @@ changes are:
 
 - Keep H0–H7 as pinned presets but treat representation, initialization,
   refinement, population, evaluation, and proposal as separate axes.
-- H1/H2/H7 are seeded; H0/H3–H6 are still random-start. The two-layer table is
-  not an all-arm result until targeted initial-population plumbing lands.
+- All fixed-width arms (H0–H6) now consume the two-layer seed; H0 uses one
+  seeded start, H1–H6 seed their populations, and H7 uses its seed bank. The
+  seven-seed all-arm tables are above.
 - Terminal needle/LM is the dominant deep-filter mechanism; report its
   insertion budget and decoder width with every depth claim.
 - Depth is cap/terminal-budget-limited; 40 layers is a target-specific screen,
@@ -734,8 +811,8 @@ target and a 5k LM cap; the seeded 40-layer filter is a stack plus LM, and
 the needle-grown 40-layer result is seed-initialized, not a GA discovery; the
 equal-budget H0/H1 result is five seeds on one target; the
 H7 arm is a mined-seed fallback, not a diffusion implementation; H6 is a
-linear screen, not a GP; only H1/H2/H7 have the two-layer seed path; an
-all-arm seeded-start campaign, navette-native A4, and the released-navette
-gate remain open. The core `ndarray` lift (`c9e964d`) resolves the earlier
+linear screen, not a GP; H0–H6 now have the two-layer seed path but only the
+terminal arms H2/H7 pass the deep screen; navette-native A4 and the
+released-navette gate remain open. The core `ndarray` lift (`c9e964d`) resolves the earlier
 navette/moors array-major split; it is a dependency-major change for the next
 navette release.

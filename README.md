@@ -41,17 +41,18 @@ I1 cross-island multi-parent crossover, the G7 campaign queue/pins/pruner,
 the G8 kurobako problem/H0–H7 registry and dispatcher, the G4/S2 mid-loop
 needle schedule for single-island and ring runs, the H6 linear surrogate, and
 the H7 mined-seed fallback and optional proposal expansion. Full suite:
-**84 tests**;
+**86 tests**;
 `--all-features` includes the kurobako proof module.
 
 Limits are explicit: navette-native A4 (per-material bounds and the
 insert/migrate grammar hook) and a true learned H7 diffusion proposal remain.
-A needle-grown 40-layer filter, seeded two-layer starts that grow H2 to
-62–64 layers, a GA-initialized 43-layer H2 deep filter, the seeded 40-layer
-artifact, the depth bake, and three H0–H7 fixtures (C00, long-pass,
-short-pass) are recorded in the ledger. The architecture/evidence analysis is
+A needle-grown 40-layer filter, all-arm seeded two-layer starts (H2 grows to
+62–64 layers; H7 to 44/73; H3 to 29/25), a GA-initialized 43-layer H2 deep
+filter, the seeded 40-layer artifact, the depth bake, and three H0–H7
+fixtures (C00, long-pass, short-pass) are recorded in the ledger. The
+architecture/evidence analysis is
 `docs/studies/h0_h7_implementation_learnings.md`; it records the terminal
-budget, seven-seed, and all-arm seeding limits.
+budget, seven-seed, and seeded-arm results.
 The mid-loop schedule has one C00 overhead measurement, not a controlled arm
 result. Consumer-side A4 is now
 enforced on every GA/terminal/joint path; the earlier C00 ledger was

@@ -1,6 +1,7 @@
 # H0–H7 implementation learnings
 
-**Status:** analysis of the code and campaigns at `36d4270` (84 tests).
+**Status:** analysis of the code and campaigns at `36d4270` (84 tests),
+updated with the all-arm seeded campaign after `5fe6810` (86 tests).
 **Scope:** the eight comparison arms in `src/bench.rs`, the engines they call,
 and the C00 / long-pass / short-pass campaigns in
 `docs/studies/phase2_phase3_ledger.md`.
@@ -22,10 +23,35 @@ The findings below rest on four kinds of evidence:
 4. **Growth probes** — chirped seeds from 10 to 40 layers, with the A1
    memetic operator and a final LM.
 
-Important scope limit: the “two-layer start” campaign seeds **H1 and H2**
-through `ComparisonOptions::initial_genomes`, and **H7** through its seed
-bank. H0 and H3–H6 still use random starts. There is no complete all-arm
-two-layer-start experiment yet.
+The original scope limit was that only **H1/H2** consumed
+`ComparisonOptions::initial_genomes` and **H7** used its seed bank. That gap
+is closed: H0 now consumes one seeded start and H1–H6 seed their populations
+(H4 every island). Section 0.1 records the seven-seed all-arm results.
+
+## 0.1 All-arm seeded update (2026-11-16)
+
+All fixed-width arms now accept the same two-layer seed; default behavior is
+unchanged when `initial_genomes` is empty. Seven seeds, 40-layer GA cap,
+20 terminal insertions, decoder width 80, one seeded pair:
+
+| arm | long-pass best | layers | short-pass best | layers | deep |
+|---|---:|---:|---:|---:|---|
+| H0 | 1,065,970.763457 | 23 | 650,958.663020 | 19 | no |
+| H1 | 5,628,078.588306 | 26 | 6,231,605.586023 | 18 | no |
+| H2 | 115.468412 | 64 | 0.487692 | 62 | yes |
+| H3 | 220,526.186485 | 29 | 189,000.676487 | 25 | no |
+| H4 | 8,998,622.288615 | 13 | 5,203,999.394324 | 18 | no |
+| H5 | 11,983,554.029035 | 25 | 9,597,228.143330 | 22 | no |
+| H6 | 17,044,481.376999 | 25 | 9,299,826.248700 | 16 | no |
+| H7 | 546.192961 | 44 | 8.990342 | 73 | yes |
+
+This confirms the main finding rather than changing it: seeding helps H3
+(29/25 layers, 220k/189k merit) but not enough without terminal growth;
+H4/H5/H6 remain weak filter optimizers; H0's best is unchanged because its
+other random starts dominate; only H2/H7 pass the deep screen. Holm-significant
+pairs: 23/28 long-pass, 17/28 short-pass. The seed moves the fixed-width arms
+closer together, so the seeded short-pass family separates less than the
+random-start family.
 
 ## 1. Executive findings
 
@@ -117,9 +143,9 @@ H0’s independent random starts plus LM are a useful classical baseline, but
 they do not compete with H1 at equal solver budget on C00, and H0 misses the
 filter target. The control is deliberately hard, but the result is clear:
 local refinement from random starts is not a substitute for population-based
-architecture search at these depths. H0 also has no initial-genome path in the
-current implementation, so it cannot yet participate in the two-layer-start
-experiment.
+architecture search at these depths. H0 now accepts one seeded start, but the
+seven-seed best is unchanged because the remaining random starts still
+dominate.
 
 ### F7. H6 is a compute-saving screen, not a better optimizer
 
@@ -184,7 +210,7 @@ example-only patches.
 
 | Arm | What it actually is | Strongest evidence | Main limitation / gap |
 |---|---|---|---|
-| **H0** | Random multi-start → LM → optional needle → LM | Robust local convergence; useful classical control | No learning/population; random starts; no initial-genome path; poor at deep filter targets |
+| **H0** | Multi-start → LM → optional needle → LM | Robust local convergence; useful classical control | No learning/population; one seeded start does not rescue it; poor at deep filter targets |
 | **H1** | Fixed-width GA only | Cheapest arm; best pure-GA C00 run (10,087 / 2.00 %) | No LM/needle; fixed width; no terminal; plateaus at shallow depth |
 | **H2** | Fixed-width GA → terminal needle/LM (S1) | Best deep long-pass result (43 layers, 0.048 % / 99.666 %); 64/62 with seeded two-layer start | Width/terminal sensitive; only improving insertions; high variance; not pure GA |
 | **H3** | Fixed-width GA + mid-loop memetic top-k (S2) | Best C00 single run (1,095 / 0.61 %) | No terminal; fixed width; filter results weak (22 layers); schedule overhead |
@@ -257,13 +283,13 @@ Then the paper arms become pinned points in that space, and cross-factor
 experiments (VL + islands, VL + archive, fixed + terminal, surrogate +
 terminal) become possible.
 
-#### B. “Initial genomes” is not a global config concern yet
+#### B. “Initial genomes” is a targeted arm input, not a config-wide concern
 
-H1/H2 consume `ComparisonOptions::initial_genomes`; H0 and H3–H6 do not.
-A complete “start from two layers” experiment needs the same seed path for
-every fixed-width arm. This is a targeted plumbing change, not necessarily a
-config-wide refactor. Until then, the fair all-arm two-layer table does not
-exist.
+All fixed-width arms now consume `ComparisonOptions::initial_genomes`: H0
+uses one seeded start, H1–H6 seed their populations, and H4 seeds every
+island. The implementation is additive arm paths, not a widening of
+`RecipeAConfig` or `H0Config`. The seven-seed all-arm table is in section 0.1;
+it still holds seed, cap, terminal budget, and evaluation budget fixed.
 
 #### C. Terminal refinement is under-specified as an experimental factor
 
@@ -323,9 +349,9 @@ wavelength bands, and merit weights.
 1. **Preserve H0–H7 as presets, but add orthogonal experiment axes.** This is
    the main architecture lesson. Do not add more bundled arms before the
    existing bundles are decomposable.
-2. **Complete initial-genome plumbing for H0/H3–H6.** The current fair
-   two-layer result covers only H1/H2/H7. Add the missing initial-population
-   paths only when an all-arm two-layer experiment is actually scheduled.
+2. **Initial-genome plumbing is complete for H0–H6.** The seven-seed all-arm
+   table is recorded; H7 remains on its separate seed bank. The next step is a
+   factorial design, not another seed path.
 3. **Make terminal refinement explicit in every report.** Record insertion
    budget, decoder width, final layers, min thickness, true evaluations, and
    certificate status.
@@ -342,8 +368,9 @@ wavelength bands, and merit weights.
    consumer checks caught real bugs; native ownership should make them
    impossible rather than test-detectable.
 9. **Add the missing cross-factor experiments before making universal
-   claims:** VL + islands, VL + archive, fixed + terminal, surrogate +
-   terminal, and all-arm seeded starts.
+   claims:** VL + islands, VL + archive, fixed + terminal, and surrogate +
+   terminal. The all-arm seeded start is now recorded; it is not a full
+   factorial design.
 
 ## 6. Open questions
 
