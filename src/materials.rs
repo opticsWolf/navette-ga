@@ -249,6 +249,29 @@ mod tests {
     }
 
     #[test]
+    fn stack_template_carries_the_native_bounds_into_pool_and_stack() {
+        let materials = load_library(
+            &[
+                table_bounded("H", 2.3, 20.0, 300.0),
+                table_bounded("L", 1.45, 10.0, 200.0),
+            ],
+            &[400.0, 700.0],
+        )
+        .unwrap();
+        let template = stack_template(
+            LayerSpec::constant("air", 1.0, 0.0, 0.0, 2),
+            LayerSpec::constant("sub", 1.52, 0.0, 0.0, 2),
+            &materials,
+        )
+        .unwrap();
+        let bounds = template.material_bounds();
+        assert_eq!(bounds[0].unwrap().min_nm, 10.0);
+        assert_eq!(bounds[1].unwrap().max_nm, 300.0);
+        let pool = template.needle_pool().unwrap();
+        assert_eq!(pool.clamp_seed_thickness(0, 1.0), 10.0);
+    }
+
+    #[test]
     fn latent_order_requires_complete_coordinates() {
         let materials = load_library(
             &[

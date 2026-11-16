@@ -33,7 +33,7 @@ sibling layout to the in-repo engine:
 
 ```toml
 # Navette/rust/navette-ga/Cargo.toml
-navette = { version = "0.10.0", path = "../navette", features = ["opt-basin"] }
+navette = { version = "0.11.0", path = "../navette", features = ["opt-basin"] }
 ```
 
 Add the package to `Navette/Cargo.toml`:
@@ -78,7 +78,7 @@ navette-ga = { path = "../navette_ga" }
 The package's own `navette` path (`../Navette/rust/navette`) resolves to the
 same canonical engine directory as Navette's `rust/navette`. If Cargo ever
 reports two distinct navette packages in this mode, make the GA dependency
-version-only (`navette = "0.10.0"`) and add the local patch to Navette's root
+version-only (`navette = "0.11.0"`) and add the local patch to Navette's root
 manifest:
 
 ```toml
@@ -93,7 +93,7 @@ A Cargo git dependency clones only this repository, so the sibling path
 dependency, use a version-only navette dependency in this package:
 
 ```toml
-navette = { version = "0.10.0", features = ["opt-basin"] }
+navette = { version = "0.11.0", features = ["opt-basin"] }
 ```
 
 and patch it to the local engine in Navette's root manifest (as in 2a). Then:

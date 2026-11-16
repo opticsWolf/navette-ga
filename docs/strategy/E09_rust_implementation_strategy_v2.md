@@ -123,11 +123,12 @@ amendments are implemented by the owner, never requested.*
   H2/H4 on short-pass. The earlier "only H2/H7 are deep" statement describes
   the default dispatch, not the mechanisms: terminal was the missing common
   stage. The H7 diffusion proposal is not implemented.
-- **Release gate:** A1/A3/A2 are not in published navette 0.10.0. The bridge
-  is local-path-only until a navette release carries them; `cargo publish` is
-  expected to fail verification meanwhile.
-- **Remaining:** an optional nalgebra `DMatrix` adapter (not required),
-  navette-native A4 (per-material bounds and insert/migrate grammar hook), the
+- **Release gate:** navette 0.11.0 now carries A1 staged needles, A2
+  `ga-introspect`, A3 `evaluate_many`, A4 native material bounds/pins/grammar
+  and the LM x0-floor fix. `cargo publish --dry-run -p navette` packages and
+  verifies locally. The external publication is the remaining step; until
+  crates.io has 0.11.0, `navette-ga`'s dry run still fails resolution.
+- **Remaining:** an optional nalgebra `DMatrix` adapter (not required), the
   H7 learned proposal, the multi-seed equal-compute H0/H1/H3 campaign, and
   terminal-stage budget/power optimization; the released-navette gate
   remains. C00, long-pass, and short-pass H0–H7 campaigns, the seven-seed

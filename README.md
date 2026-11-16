@@ -140,7 +140,7 @@ cargo check --all-features   # includes the bench feature
 
 The single layout dependency is the `navette` entry in `[dependencies]`. If
 Navette lives elsewhere, change that one path; if you want the published
-engine, drop the `path` (the version already is `0.10.0`).
+engine, drop the `path` (the version already is `0.11.0`).
 
 ## Features
 
@@ -155,7 +155,7 @@ layer) is a normal dependency of the one crate.
 
 The repository root is the package, so `cargo publish` publishes the whole
 implementation as one crate. The `navette` path dependency carries a version
-(`0.10.0`) and is stripped on publish; `bench` stays opt-in. See
+(`0.11.0`) and is stripped on publish; `bench` stays opt-in. See
 [`docs/integration.md`](docs/integration.md) for adding the crate to the
 Navette repository directly, or linking it from there.
 

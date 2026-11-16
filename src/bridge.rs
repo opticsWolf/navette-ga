@@ -892,11 +892,10 @@ impl FitnessEvaluator {
 
     /// Evaluate a generation in input order through navette's A3 batch door.
     ///
-    /// A3 lives on navette's `dev_ga` branch and is compiled in by the local
-    /// path dependency. The call fans the population out through Rayon while
-    /// each solve keeps its own grid parallelism. A published navette release
-    /// containing A3 is required before this crate can be published; see the
-    /// release-gate note on the navette dependency in `Cargo.toml`.
+    /// A3 is part of navette 0.11.0, compiled in through the versioned path
+    /// dependency. The call fans the population out through Rayon while each
+    /// solve keeps its own grid parallelism. See the release-gate note on the
+    /// navette dependency in `Cargo.toml`.
     pub fn evaluate_batch(&self, stacks: &[DesignStack]) -> Result<Vec<f64>, String> {
         self.evals.fetch_add(stacks.len(), Ordering::Relaxed);
         self.ctx.evaluate_many(stacks)
