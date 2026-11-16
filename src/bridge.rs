@@ -29,7 +29,9 @@ use navette::smatrix::synthesis::evaluator::SmatrixContext;
 use navette::smatrix::synthesis::merit::{MeritSpec, SimCurves};
 use navette::smatrix::synthesis::pipeline::SpectralInputs;
 use navette::smatrix::synthesis::staged::{PolishReport, PolishScope};
-use navette::smatrix::synthesis::structure::{ClampReport, DesignStack, EdgeMaterials, LayerSpec};
+use navette::smatrix::synthesis::structure::{
+    ClampReport, DesignStack, EdgeMaterials, LayerSpec, ThicknessBounds,
+};
 use ndarray::{Array2, ArrayView2};
 
 use crate::decoder::{AdjacencyGrammar, DecodedStack, Decoder, MaterialPool as DecoderPool, Pins};
@@ -434,6 +436,9 @@ pub struct StackTemplate {
     pub ambient: LayerSpec,
     pub substrate: LayerSpec,
     pub materials: Vec<LayerSpec>,
+    /// A4: one optional interval per template material, index-aligned with
+    /// `materials`. `None` keeps navette's global clamp fallback.
+    bounds: Vec<Option<ThicknessBounds>>,
     boundary: BoundaryRules,
 }
 
@@ -471,12 +476,45 @@ impl StackTemplate {
         ambient.needle = false;
         substrate.optimize = false;
         substrate.needle = false;
+        let bounds = vec![None; materials.len()];
         Ok(Self {
             ambient,
             substrate,
             materials,
+            bounds,
             boundary: BoundaryRules::default(),
         })
+    }
+
+    /// A4: attach navette's per-material intervals, in template order.
+    ///
+    /// An empty vector is the compatibility case (no intervals); otherwise
+    /// the length must match `materials` exactly.
+    pub fn with_material_bounds(
+        mut self,
+        bounds: Vec<Option<ThicknessBounds>>,
+    ) -> Result<Self, String> {
+        if bounds.is_empty() {
+            self.bounds = vec![None; self.materials.len()];
+            return Ok(self);
+        }
+        if bounds.len() != self.materials.len() {
+            return Err(format!(
+                "stack template: {} bounds for {} materials",
+                bounds.len(),
+                self.materials.len()
+            ));
+        }
+        for b in bounds.iter().flatten() {
+            b.validate()?;
+        }
+        self.bounds = bounds;
+        Ok(self)
+    }
+
+    /// A4: the intervals, index-aligned with [`Self::materials`].
+    pub fn material_bounds(&self) -> &[Option<ThicknessBounds>] {
+        &self.bounds
     }
 
     /// Attach validated material-boundary rules.
@@ -636,6 +674,16 @@ impl StackTemplate {
         }
         let mut stack =
             DesignStack::with_films(self.ambient.clone(), self.substrate.clone(), films)?;
+        // A4: the template's intervals travel into the assembled design, so
+        // the LM and terminal insertion enforce them.
+        let material_bounds =
+            self.materials
+                .iter()
+                .zip(&self.bounds)
+                .filter_map(|(material, bounds)| {
+                    bounds.map(|b| (Arc::from(material.material.as_ref()), b))
+                });
+        stack.set_material_bounds(material_bounds)?;
         if self.boundary.outer.is_some() || self.boundary.inner.is_some() {
             stack.set_edge_materials(self.edge_materials()?)?;
         }
@@ -648,7 +696,8 @@ impl StackTemplate {
     /// ignored by the needle pass, which only reads material label, nk and
     /// label/insert rules.
     pub fn needle_pool(&self) -> Result<MaterialPool, String> {
-        let pool = MaterialPool::from(self.materials.clone());
+        let pool = MaterialPool::from(self.materials.clone())
+            .with_thickness_bounds(self.bounds.clone())?;
         match &self.boundary.insert {
             Some(rules) => pool.with_insert_rules(rules),
             None => Ok(pool),
@@ -1307,6 +1356,7 @@ mod tests {
                 values: vec![n, n],
             }),
             k_data: None,
+            thickness_bounds: None,
         }
     }
 

@@ -38,6 +38,7 @@ fn table(name: &str, n: f64, wavelengths: &[f64]) -> MaterialDef {
             values: vec![n; wavelengths.len()],
         }),
         k_data: None,
+        thickness_bounds: Some(ThicknessBounds::new(D_MIN_NM, 300.0).unwrap()),
     }
 }
 
@@ -106,19 +107,7 @@ fn main() {
         table("H", 2.30, &wavelengths),
         table("L", 1.45, &wavelengths),
     ];
-    let bounds: BTreeMap<String, ThicknessBounds> = [
-        (
-            "H".to_string(),
-            ThicknessBounds::new(D_MIN_NM, 300.0).unwrap(),
-        ),
-        (
-            "L".to_string(),
-            ThicknessBounds::new(D_MIN_NM, 300.0).unwrap(),
-        ),
-    ]
-    .into_iter()
-    .collect();
-    let loaded = load_library(&library, &wavelengths, &bounds).unwrap();
+    let loaded = load_library(&library, &wavelengths).unwrap();
     let pool = decoder_pool(&loaded).unwrap();
     let decoder = Decoder::without_constraints(pool)
         .unwrap()

@@ -15,27 +15,13 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use navette::smatrix::synthesis::design_config::{evaluate_library, MaterialDef};
+use navette::smatrix::synthesis::design_config::{evaluate_library_with_bounds, MaterialDef};
 use navette::smatrix::synthesis::structure::LayerSpec;
 
 use crate::bridge::StackTemplate;
 use crate::decoder::{DecodeError, Material, MaterialPool};
 
-/// Closed thickness interval for one material, in nm.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ThicknessBounds {
-    pub min_nm: f64,
-    pub max_nm: f64,
-}
-
-impl ThicknessBounds {
-    pub fn new(min_nm: f64, max_nm: f64) -> Result<Self, String> {
-        if !min_nm.is_finite() || !max_nm.is_finite() || min_nm < 0.0 || max_nm < min_nm {
-            return Err(format!("invalid thickness bounds [{min_nm}, {max_nm}] nm"));
-        }
-        Ok(Self { min_nm, max_nm })
-    }
-}
+pub use navette::smatrix::synthesis::structure::ThicknessBounds;
 
 /// One evaluated material, ready for both sides of the bridge.
 #[derive(Clone, Debug)]
@@ -55,13 +41,12 @@ impl LoadedMaterial {
 
 /// Load and order a material library on `wavelengths`.
 ///
-/// `bounds` is keyed by library label (the code when present, otherwise the
-/// name). Every library entry must have a unique label and a bounds entry;
-/// missing or duplicate data is an error rather than a silent default.
+/// A4: every library entry carries its own `thickness_bounds`; there is no
+/// second bounds table here. A missing interval is an error rather than a
+/// silent default, and duplicate labels are refused by navette's evaluator.
 pub fn load_library(
     library: &[MaterialDef],
     wavelengths: &[f64],
-    bounds: &BTreeMap<String, ThicknessBounds>,
 ) -> Result<Vec<LoadedMaterial>, String> {
     if library.is_empty() {
         return Err("material library is empty".into());
@@ -78,18 +63,20 @@ pub fn load_library(
         }
     }
 
-    let evaluated = evaluate_library(library, wavelengths)?;
+    let evaluated = evaluate_library_with_bounds(library, wavelengths)?;
     let mut loaded = Vec::with_capacity(evaluated.len());
-    for (index, (label, nk)) in evaluated.into_iter().enumerate() {
-        let def = &library[index];
-        let bounds = bounds
-            .get(&label)
-            .or_else(|| bounds.get(&def.name))
-            .copied()
-            .ok_or_else(|| format!("material {label:?} has no thickness bounds"))?;
-        let mean_n = nk.iter().map(|value| value.re).sum::<f64>() / nk.len() as f64;
-        let dispersion = if nk.len() > 1 {
-            (nk[0].re - nk[nk.len() - 1].re) / (wavelengths[wavelengths.len() - 1] - wavelengths[0])
+    for material in evaluated {
+        let bounds = material.bounds.ok_or_else(|| {
+            format!(
+                "material {:?} has no thickness_bounds in the library",
+                material.label
+            )
+        })?;
+        let mean_n =
+            material.nk.iter().map(|value| value.re).sum::<f64>() / material.nk.len() as f64;
+        let dispersion = if material.nk.len() > 1 {
+            (material.nk[0].re - material.nk[material.nk.len() - 1].re)
+                / (wavelengths[wavelengths.len() - 1] - wavelengths[0])
         } else {
             0.0
         };
@@ -97,15 +84,10 @@ pub fn load_library(
             mean_n,
             dispersion,
             LoadedMaterial {
-                label,
+                label: material.label.clone(),
                 film: LayerSpec {
-                    material: Arc::from(
-                        library[index]
-                            .code
-                            .as_deref()
-                            .unwrap_or(&library[index].name),
-                    ),
-                    nk: nk.into(),
+                    material: Arc::from(material.label.as_str()),
+                    nk: material.nk.into(),
                     d_nm: 0.0,
                     coherent: true,
                     rough_type: 0,
@@ -211,7 +193,11 @@ pub fn stack_template(
     substrate: LayerSpec,
     materials: &[LoadedMaterial],
 ) -> Result<StackTemplate, String> {
-    StackTemplate::new(ambient, substrate, films(materials))
+    let bounds = materials
+        .iter()
+        .map(|material| ThicknessBounds::new(material.min_nm, material.max_nm).map(Some))
+        .collect::<Result<Vec<_>, _>>()?;
+    StackTemplate::new(ambient, substrate, films(materials))?.with_material_bounds(bounds)
 }
 
 #[cfg(test)]
@@ -221,7 +207,7 @@ mod tests {
 
     use navette::smatrix::synthesis::design_config::{MaterialDef, TabData};
 
-    fn table(name: &str, n: f64) -> MaterialDef {
+    fn table_bounded(name: &str, n: f64, min_nm: f64, max_nm: f64) -> MaterialDef {
         MaterialDef {
             name: name.to_string(),
             code: None,
@@ -232,22 +218,22 @@ mod tests {
                 values: vec![n, n],
             }),
             k_data: None,
+            thickness_bounds: Some(ThicknessBounds::new(min_nm, max_nm).unwrap()),
         }
     }
 
-    fn bounds(entries: &[(&str, f64, f64)]) -> BTreeMap<String, ThicknessBounds> {
-        entries
-            .iter()
-            .map(|(name, min, max)| (name.to_string(), ThicknessBounds::new(*min, *max).unwrap()))
-            .collect()
+    fn table(name: &str, n: f64) -> MaterialDef {
+        table_bounded(name, n, 10.0, 300.0)
     }
 
     #[test]
     fn loader_orders_by_index_and_builds_matching_pool() {
         let materials = load_library(
-            &[table("H", 2.3), table("L", 1.45)],
+            &[
+                table_bounded("H", 2.3, 20.0, 300.0),
+                table_bounded("L", 1.45, 10.0, 200.0),
+            ],
             &[400.0, 700.0],
-            &bounds(&[("H", 20.0, 300.0), ("L", 10.0, 200.0)]),
         )
         .unwrap();
         assert_eq!(materials.len(), 2);
@@ -265,9 +251,11 @@ mod tests {
     #[test]
     fn latent_order_requires_complete_coordinates() {
         let materials = load_library(
-            &[table("H", 2.3), table("L", 1.45)],
+            &[
+                table_bounded("H", 2.3, 20.0, 300.0),
+                table_bounded("L", 1.45, 10.0, 200.0),
+            ],
             &[400.0, 700.0],
-            &bounds(&[("H", 20.0, 300.0), ("L", 10.0, 200.0)]),
         )
         .unwrap();
         let mut latent = BTreeMap::new();
@@ -285,15 +273,12 @@ mod tests {
 
     #[test]
     fn loader_refuses_missing_bounds_and_empty_library() {
-        let err = load_library(
-            &[table("H", 2.3)],
-            &[400.0, 700.0],
-            &bounds(&[("L", 10.0, 200.0)]),
-        )
-        .unwrap_err();
-        assert!(err.contains("no thickness bounds"), "{err}");
+        let mut missing = table("H", 2.3);
+        missing.thickness_bounds = None;
+        let err = load_library(&[missing], &[400.0, 700.0]).unwrap_err();
+        assert!(err.contains("no thickness_bounds"), "{err}");
 
-        let err = load_library(&[], &[400.0, 700.0], &bounds(&[])).unwrap_err();
+        let err = load_library(&[], &[400.0, 700.0]).unwrap_err();
         assert!(err.contains("empty"), "{err}");
     }
 }
