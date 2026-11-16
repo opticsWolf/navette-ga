@@ -118,6 +118,7 @@ fn main() {
     let args = std::env::args().collect::<Vec<_>>();
     let seed_count = number(&args, "--seeds", 7).clamp(1, 20);
     let max_layers = number(&args, "--max-layers", 40).clamp(2, 60);
+    let seed_pairs = number(&args, "--seed-pairs", 20).clamp(1, 30);
     let terminal_insertions = number(&args, "--terminal-insertions", 10).clamp(1, 100);
     let fixture = args
         .iter()
@@ -145,7 +146,7 @@ fn main() {
     let pool = decoder_pool(&loaded).unwrap();
     let decoder = Decoder::without_constraints(pool)
         .unwrap()
-        .with_max_layers((max_layers + 2 * terminal_insertions).max(60));
+        .with_max_layers((max_layers + 2 * terminal_insertions).max(80));
     let ambient = LayerSpec::constant("air", 1.0, 0.0, 0.0, wavelengths.len());
     let substrate = LayerSpec::constant("substrate", 1.52, 0.0, 0.0, wavelengths.len());
     let template = stack_template(ambient.clone(), substrate.clone(), &loaded).unwrap();
@@ -184,9 +185,18 @@ fn main() {
     .unwrap();
 
     let mut films = Vec::new();
-    for index in 0..20 {
-        let position = if shortpass { 19 - index } else { index };
-        let centre = 450.0 + position as f64 * 10.0;
+    let seed_step = if seed_pairs > 1 {
+        190.0 / (seed_pairs - 1) as f64
+    } else {
+        0.0
+    };
+    for index in 0..seed_pairs {
+        let position = if shortpass {
+            seed_pairs - 1 - index
+        } else {
+            index
+        };
+        let centre = 450.0 + position as f64 * seed_step;
         let mut h = LayerSpec::constant("H", 2.30, 0.0, centre / (4.0 * 2.30), wavelengths.len());
         h.label = Some("H".into());
         let mut l = LayerSpec::constant("L", 1.45, 0.0, centre / (4.0 * 1.45), wavelengths.len());
@@ -220,7 +230,7 @@ fn main() {
         vl: VlRecipeAConfig {
             population_size: 12,
             generations: 12,
-            min_layers: 10,
+            min_layers: (seed_pairs * 2).min(10),
             max_layers: 50,
             mutation_sigma: 0.15,
             length_penalty: None,

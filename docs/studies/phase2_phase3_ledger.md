@@ -432,6 +432,27 @@ The five exceptions are H0–H3 (`0.6976`), H1–H4 (`1.0000`), H1–H5
 (`0.9528`), H2–H7 (`1.0000`), and H4–H5 (`0.8345`); the deeper H2/H7 rows do
 not change the separation pattern.
 
+## Phase 3 — two-layer start
+
+A minimal-start run uses `--max-layers 2 --seed-pairs 1
+--terminal-insertions 20`: the H0–H6 GA cap is two layers, H7's seed bank is
+one H/L pair, and the decoder is auto-sized to at least 80 films.
+
+| fixture | arm | best merit | median merit | layers | pass R | stop R | target | ERT | deep |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| long-pass | H2 | 9,517,734.181040 | 30,301,971.734870 | 4 | 7.7114 % | 61.0519 % | 0/7 | none | no |
+| long-pass | H7 | **546.192961** | 4,107.786077 | **44** | **0.1007 %** | **99.7472 %** | 5/7 | 4,149.2 | **yes** |
+| short-pass | H2 | 303,201.896246 | 4,152,421.370293 | 8 | 2.8685 % | 89.6478 % | 0/7 | none | no |
+| short-pass | H7 | **8.990342** | 39,111.806852 | **73** | **0.0331 %** | **99.9822 %** | 3/7 | 3,162.0 | **yes** |
+
+H2 cannot recover from a two-layer GA cap: its terminal finish adds only 2–6
+layers and the optical merit stays poor. H7's variable-length seed plus the
+same terminal budget grows to 44 layers on long-pass and 73 on short-pass,
+passing the deep screen on both. The result is still seed-initialized, not a
+pure GA discovery, and H7's target success is seed-dependent (5/7 and 3/7,
+with high medians), so this is a reachability result rather than a robust
+recipe.
+
 ## Phase 3 — H0–H7 dispatch and campaign loop
 
 `bench::run_comparison_arm` now dispatches the registry to the engine that

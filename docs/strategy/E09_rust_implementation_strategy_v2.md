@@ -99,8 +99,12 @@ amendments are implemented by the owner, never requested.*
   and terminal budget needed are target-specific, but the 40-layer count
   itself is reachable.
   The short-pass family has 23 significant pairs; H0–H3, H1–H4, H1–H5,
-  H2–H7, and H4–H5 do not separate. The H7 diffusion proposal is not
-  implemented.
+  H2–H7, and H4–H5 do not separate. A two-layer-start run
+  (`--max-layers 2 --seed-pairs 1 --terminal-insertions 20`) leaves H2 at
+  4/8 layers on long/short-pass, while H7 grows to 44/73 layers and passes
+  the deep screen, with 5/7 and 3/7 target success. The minimal seed is not
+  enough for H2's fixed-width GA; H7's variable-length seed plus terminal
+  finish carries the depth. The H7 diffusion proposal is not implemented.
 - **Release gate:** A1/A3/A2 are not in published navette 0.10.0. The bridge
   is local-path-only until a navette release carries them; `cargo publish` is
   expected to fail verification meanwhile.
