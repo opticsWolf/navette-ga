@@ -818,6 +818,55 @@ where
     builder.build().map_err(|e| e.to_string())
 }
 
+fn initial_population_seeded(
+    cfg: &RecipeAConfig,
+    seed: Option<u64>,
+    initial_genomes: &[Genome],
+) -> Result<Population<LayerChromosome>, String> {
+    if initial_genomes.is_empty() {
+        return Ok(initial_population(cfg, seed));
+    }
+    for (index, genome) in initial_genomes.iter().enumerate() {
+        if genome.is_empty() {
+            return Err(format!("seeded Recipe A initial genome {index} is empty"));
+        }
+        if genome.len() > cfg.max_layers {
+            return Err(format!(
+                "seeded Recipe A initial genome {index} has {} layers, above the width {}",
+                genome.len(),
+                cfg.max_layers
+            ));
+        }
+    }
+
+    set_seed(seed);
+    let mut rng = make_rng();
+    let chromosomes = (0..cfg.population_size)
+        .map(|index| {
+            let base = &initial_genomes[index % initial_genomes.len()];
+            let mut dna = genome_to_dna(base);
+            if index > 0 {
+                // Keep the seed's active/inactive pattern, but diversify the
+                // material and thickness keys so the first generation is not
+                // a population of identical chromosomes.
+                for gene in &mut dna {
+                    gene.material =
+                        wrap01(gene.material + gaussian(&mut rng) * cfg.mutation_sigma * 0.25);
+                    gene.thickness =
+                        wrap01(gene.thickness + gaussian(&mut rng) * cfg.mutation_sigma * 0.25);
+                }
+            }
+            while dna.len() < cfg.max_layers {
+                let mut padding = KeyGene::random(&mut rng);
+                padding.presence = 0.0;
+                dna.push(padding);
+            }
+            LayerChromosome::from_dna(dna)
+        })
+        .collect();
+    Ok(Population::new(chromosomes))
+}
+
 fn initial_population(cfg: &RecipeAConfig, seed: Option<u64>) -> Population<LayerChromosome> {
     set_seed(seed);
     let mut rng = make_rng();
@@ -1474,6 +1523,51 @@ pub fn run_recipe_a(
         template,
         evaluator,
         None,
+        cfg.generations,
+        cfg.seed,
+        None,
+    )?;
+    let best = ga.run().map_err(|e| e.to_string())?.best_chromosome.clone();
+    let best_genome = best.to_genome();
+    let decoded = decoder.decode(&best_genome).map_err(|e| e.to_string())?;
+    let stack = checked_assemble(decoder, template, &decoded)?;
+    let merit = evaluator.evaluate(&stack)?;
+
+    Ok(RecipeAResult {
+        best_genome,
+        decoded,
+        stack,
+        merit,
+        generations: cfg.generations,
+    })
+}
+
+/// Run Recipe A from a fixed-width genome bank.
+///
+/// Each seed is padded into `cfg.max_layers` slots; the seed's active genes
+/// stay at the front and the remaining slots carry `presence = 0`. This lets a
+/// two-layer design start a 40-layer-width search without changing the
+/// fixed-width GA contract. With an empty bank this is ordinary random Recipe A.
+pub fn run_recipe_a_seeded(
+    decoder: &Decoder,
+    template: &StackTemplate,
+    evaluator: &FitnessEvaluator,
+    cfg: &RecipeAConfig,
+    initial_genomes: &[Genome],
+) -> Result<RecipeAResult, String> {
+    if initial_genomes.is_empty() {
+        return run_recipe_a(decoder, template, evaluator, cfg);
+    }
+    validate_recipe_a(cfg)?;
+    template.check_grammar(decoder.pool(), decoder.grammar())?;
+
+    let population = initial_population_seeded(cfg, cfg.seed, initial_genomes)?;
+    let mut ga = build_recipe_a_ga(
+        cfg,
+        decoder,
+        template,
+        evaluator,
+        Some(population),
         cfg.generations,
         cfg.seed,
         None,
@@ -2960,6 +3054,55 @@ mod tests {
         })
         .unwrap();
         spec
+    }
+
+    #[test]
+    fn seeded_recipe_a_pads_a_two_layer_genome_to_the_cap() {
+        let pool = MaterialPool::new(vec![
+            Material::new("H", 20.0, 200.0).unwrap(),
+            Material::new("L", 10.0, 150.0).unwrap(),
+        ])
+        .unwrap();
+        let decoder = Decoder::without_constraints(pool).unwrap();
+        let template = StackTemplate::new(
+            constant("air", 1.0, 0.0),
+            constant("substrate", 1.52, 0.0),
+            vec![constant("H", 2.2, 0.0), constant("L", 1.46, 0.0)],
+        )
+        .unwrap();
+        let evaluator = FitnessEvaluator::new(
+            vec![550.0],
+            &[0.0],
+            zero_spec(),
+            EvaluatorOptions::default(),
+        )
+        .unwrap();
+        let cfg = RecipeAConfig {
+            population_size: 4,
+            generations: 2,
+            max_layers: 6,
+            mutation_sigma: 0.2,
+            seed: Some(5),
+        };
+        let seed = Genome::from(vec![
+            LayerGene::new(0.25, 0.5, 1.0),
+            LayerGene::new(0.75, 0.5, 1.0),
+        ]);
+        let population =
+            initial_population_seeded(&cfg, Some(5), std::slice::from_ref(&seed)).unwrap();
+        let genome = population.chromosomes[0].to_genome();
+        assert_eq!(genome.len(), cfg.max_layers);
+        assert_eq!(
+            genome
+                .genes()
+                .iter()
+                .filter(|gene| gene.presence >= 0.5)
+                .count(),
+            2
+        );
+        let result = run_recipe_a_seeded(&decoder, &template, &evaluator, &cfg, &[seed]).unwrap();
+        assert!(result.merit.is_finite());
+        assert_eq!(result.best_genome.len(), cfg.max_layers);
     }
 
     #[test]

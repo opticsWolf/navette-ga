@@ -10,7 +10,7 @@ repository, and every limitation is listed rather than inferred away.
 - `navette` local `dev_ga` at `5adb40c` (A1/A3, A2 introspection, public
   joint scan, the core `ndarray` 0.16 lift, and the LM x0-floor fix).
 - `navette-ga` single crate, LGPL-3.0-or-later.
-- `cargo test --all-features`: **83 passed**.
+- `cargo test --all-features`: **84 passed**.
 - `cargo clippy --all-targets --all-features -- -D warnings`: clean.
 - `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features`: clean.
 - `navette` with `ga-introspect`: **802 passed, 1 ignored**.
@@ -452,6 +452,36 @@ passing the deep screen on both. The result is still seed-initialized, not a
 pure GA discovery, and H7's target success is seed-dependent (5/7 and 3/7,
 with high medians), so this is a reachability result rather than a robust
 recipe.
+
+## Phase 3 — seeded two-layer start at full width
+
+The earlier two-layer run set `--max-layers 2`, so the fixed-width arms had no
+spare slots to activate. The fair version seeds **two active genes into a
+40-slot genome** with `--initial-pairs 1 --seed-pairs 1 --max-layers 40
+--terminal-insertions 20`. H1 and H2 use the new
+`engines::run_recipe_a_seeded` / `ComparisonOptions::initial_genomes` path;
+H7 still starts from the same two-layer seed bank.
+
+| fixture | arm | best merit | median merit | layers | pass R | stop R | target | ERT | deep |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| long-pass | H1 | 5,628,078.588306 | 13,939,695.247669 | 26 | 35.1856 % | 84.2270 % | 0/7 | none | no |
+| long-pass | H2 | **115.468412** | 309.398369 | **64** | **0.0370 %** | **99.9045 %** | 5/7 | 4,577.0 | **yes** |
+| long-pass | H7 | **546.192961** | 4,107.786077 | **44** | **0.1007 %** | **99.7472 %** | 5/7 | 4,149.2 | **yes** |
+| short-pass | H1 | 6,231,605.586023 | 9,332,977.163540 | 18 | 13.1602 % | 55.8288 % | 0/7 | none | no |
+| short-pass | H2 | **0.487692** | 6.084052 | **62** | **0.0082 %** | **99.9964 %** | 7/7 | 2,210.7 | **yes** |
+| short-pass | H7 | **8.990342** | 39,111.806852 | **73** | **0.0331 %** | **99.9822 %** | 3/7 | 3,162.0 | **yes** |
+
+This resolves the earlier confound. H1's fixed-width presence genes can
+activate spare slots and grow from 2 to 26/18 layers, but the plain GA remains
+far from the target. H2 starts from the same two-layer design, lets the GA
+activate slots up to 40, then the terminal finish grows it to 64/62 layers;
+both pass the deep screen. H7 reaches 44/73 from its two-layer variable-length
+seed.
+
+H2 is still GA-initialized plus terminal refinement, not a pure GA discovery,
+and H7 remains seed-initialized. H2 and H7 separate on short-pass
+(Holm `0.0197`) but not on long-pass. The fixed-width arms can start small and
+grow; the 40-slot width plus the terminal pass is what carries H2 to 60+.
 
 ## Phase 3 — H0–H7 dispatch and campaign loop
 

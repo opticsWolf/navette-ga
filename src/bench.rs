@@ -20,10 +20,10 @@ use crate::bridge::{FitnessEvaluator, MemeticOperator, StackTemplate};
 use crate::decoder::{Decoder, Genome, LayerGene};
 use crate::engines::{
     finish_recipe_a, run_h0_control, run_recipe_a, run_recipe_a_illuminated, run_recipe_a_memetic,
-    run_recipe_a_surrogate, run_recipe_a_tribes, run_recipe_a_vl_proposed, run_recipe_a_vl_seeded,
-    H0Config, HeterogeneousTribeConfig, IslandRecipeConfig, IslandStrategy, MemeticSchedule,
-    ProposalConfig, RecipeAConfig, RecipeAResult, SurrogateConfig, TribeConstraint,
-    VlRecipeAConfig,
+    run_recipe_a_seeded, run_recipe_a_surrogate, run_recipe_a_tribes, run_recipe_a_vl_proposed,
+    run_recipe_a_vl_seeded, H0Config, HeterogeneousTribeConfig, IslandRecipeConfig, IslandStrategy,
+    MemeticSchedule, ProposalConfig, RecipeAConfig, RecipeAResult, SurrogateConfig,
+    TribeConstraint, VlRecipeAConfig,
 };
 use crate::qd::ArchiveConfig;
 use crate::study::{holm_bonferroni, mann_whitney_u, RankSumReport};
@@ -265,6 +265,9 @@ pub struct ComparisonOptions {
     pub surrogate: SurrogateConfig,
     pub archive: ArchiveConfig,
     pub operator: Option<MemeticOperator>,
+    /// Initial fixed-width genomes for H1/H2. Each is padded with inactive
+    /// slots up to `recipe.max_layers`; empty keeps random initialization.
+    pub initial_genomes: Vec<Genome>,
     pub seeds: Vec<Genome>,
     pub seed_fraction: f64,
     /// Optional Gaussian proposal expansion for H7. `None` uses the raw seed
@@ -287,6 +290,7 @@ impl Default for ComparisonOptions {
             surrogate: SurrogateConfig::default(),
             archive: ArchiveConfig::default(),
             operator: None,
+            initial_genomes: Vec::new(),
             seeds: Vec::new(),
             seed_fraction: 1.0,
             proposal: None,
@@ -328,13 +332,35 @@ pub fn run_comparison_arm(
             &options.h0,
             options.operator.as_ref(),
         )?,
-        ComparisonArm::H1 => run_recipe_a(decoder, template, evaluator, &options.recipe)?,
+        ComparisonArm::H1 => {
+            if options.initial_genomes.is_empty() {
+                run_recipe_a(decoder, template, evaluator, &options.recipe)?
+            } else {
+                run_recipe_a_seeded(
+                    decoder,
+                    template,
+                    evaluator,
+                    &options.recipe,
+                    &options.initial_genomes,
+                )?
+            }
+        }
         ComparisonArm::H2 => {
             let operator = options
                 .operator
                 .as_ref()
                 .ok_or_else(|| "H2 needs a memetic operator for the terminal finish".to_string())?;
-            let result = run_recipe_a(decoder, template, evaluator, &options.recipe)?;
+            let result = if options.initial_genomes.is_empty() {
+                run_recipe_a(decoder, template, evaluator, &options.recipe)?
+            } else {
+                run_recipe_a_seeded(
+                    decoder,
+                    template,
+                    evaluator,
+                    &options.recipe,
+                    &options.initial_genomes,
+                )?
+            };
             let (finished, _) = finish_recipe_a(
                 decoder,
                 template,
@@ -841,6 +867,7 @@ mod tests {
                 max_front: 2,
             },
             operator: Some(operator),
+            initial_genomes: Vec::new(),
             seeds: vec![Genome::from(vec![LayerGene::new(0.25, 0.5, 1.0)])],
             seed_fraction: 0.5,
             proposal: Some(ProposalConfig {

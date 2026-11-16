@@ -119,6 +119,7 @@ fn main() {
     let seed_count = number(&args, "--seeds", 7).clamp(1, 20);
     let max_layers = number(&args, "--max-layers", 40).clamp(2, 60);
     let seed_pairs = number(&args, "--seed-pairs", 20).clamp(1, 30);
+    let initial_pairs = number(&args, "--initial-pairs", 0).clamp(0, 30);
     let terminal_insertions = number(&args, "--terminal-insertions", 10).clamp(1, 100);
     let fixture = args
         .iter()
@@ -204,8 +205,37 @@ fn main() {
         films.push(h);
         films.push(l);
     }
-    let seed_stack = DesignStack::with_films(ambient, substrate, films).unwrap();
+    let seed_stack = DesignStack::with_films(ambient.clone(), substrate.clone(), films).unwrap();
     let seed = genome_from_stack(&decoder, &seed_stack);
+
+    let initial_genomes = if initial_pairs == 0 {
+        Vec::new()
+    } else {
+        let step = if initial_pairs > 1 {
+            190.0 / (initial_pairs - 1) as f64
+        } else {
+            0.0
+        };
+        let mut films = Vec::new();
+        for index in 0..initial_pairs {
+            let position = if shortpass {
+                initial_pairs - 1 - index
+            } else {
+                index
+            };
+            let centre = 450.0 + position as f64 * step;
+            let mut h =
+                LayerSpec::constant("H", 2.30, 0.0, centre / (4.0 * 2.30), wavelengths.len());
+            h.label = Some("H".into());
+            let mut l =
+                LayerSpec::constant("L", 1.45, 0.0, centre / (4.0 * 1.45), wavelengths.len());
+            l.label = Some("L".into());
+            films.push(h);
+            films.push(l);
+        }
+        let stack = DesignStack::with_films(ambient, substrate, films).unwrap();
+        vec![genome_from_stack(&decoder, &stack)]
+    };
 
     let options = ComparisonOptions {
         recipe: RecipeAConfig {
@@ -242,6 +272,7 @@ fn main() {
             max_insertions: 1,
         },
         operator: Some(operator),
+        initial_genomes,
         seeds: vec![seed],
         seed_fraction: 0.5,
         proposal: Some(ProposalConfig {
