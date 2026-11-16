@@ -47,8 +47,8 @@ amendments are implemented by the owner, never requested.*
   function; without that, island/illuminated generations silently kept the
   GA's default zero fitness. The first depth bake on the C00 AR fixture
   screened every result and found the fixed-width H1 path plateaus at 16
-  decoded layers even with a 40-layer cap, so the 40-layer steep-edge
-  Recipe B filter remains open. The first five-seed equal-solver-budget
+  decoded layers even with a 40-layer cap; needle growth and H2 now reach
+  the 40-layer steep-edge filter (below). The first five-seed equal-solver-budget
   H0/H1 run (2k and 20k evaluations) has H1 ahead at both budgets on this
   fixture; tie-corrected normal-approximation rank-sum p-values are 0.0082 and
   0.0053. A seeded 40-layer chirped H/L stack plus LM reaches passband
@@ -88,11 +88,15 @@ amendments are implemented by the owner, never requested.*
   rather than seeded, but both still use terminal needle/LM refinement. The
   28-pair family has 24 Holm-significant pairs; only H1–H4, H1–H5, H1–H6, and
   H2–H7 fail to separate. A third short-pass fixture gives H2 35 layers at
-  0.0772 % / 99.8788 % and H7 38 layers at 0.0236 % / 99.9365 %; both succeed
-  on 7/7 target runs but fail the 40-layer deep screen. This negative
-  depth-transfer result shows that the 40-layer depth is target-specific. The
-  short-pass family has 23 significant pairs; H0–H3, H1–H4, H1–H5, H2–H7, and
-  H4–H5 do not separate. The H7 diffusion proposal is not implemented.
+  0.0772 % / 99.8788 % and H7 38 layers at 0.0236 % / 99.9365 % at the
+  default 40-layer cap; both succeed on 7/7 target runs but miss the deep
+  screen. A cap sweep shows H2 at 39 layers with a 42 cap and 40 layers /
+  0.0655 % / 99.9282 % (deep) with a 44 cap, while H7 stays at 38. The
+  earlier negative depth-transfer reading was cap-limited: the GA width
+  needed is target-specific, but the 40-layer short-pass design is reachable.
+  The short-pass family has 23 significant pairs; H0–H3, H1–H4, H1–H5,
+  H2–H7, and H4–H5 do not separate. The H7 diffusion proposal is not
+  implemented.
 - **Release gate:** A1/A3/A2 are not in published navette 0.10.0. The bridge
   is local-path-only until a navette release carries them; `cargo publish` is
   expected to fail verification meanwhile.
@@ -516,8 +520,9 @@ stands on E00 picks.
   run had a 5 nm LM clamp below the decoder bound).
   **Phase 2 status:** the ring/tribes/parsimony paths, spectral joint run,
   joint equivalence, H0 control, A2 introspection, consumer-side A4, S4-lite
-  archive, and S6 split are implemented and tested; the 40-layer production
-  filter/merit-vs-depth bake and navette-native A4 remain. The follow-up
+  archive, and S6 split are implemented and tested; needle-grown and
+  GA-initialized 40-layer filters plus the merit-vs-depth bake are recorded;
+  navette-native A4 remains. The follow-up
   review wired A4 validation into every GA/terminal path, made the spectral
   joint step trial-gated and transactional, and aligned the comparison-arm
   registry with §2.7. See `docs/studies/phase2_phase3_ledger.md`.

@@ -396,11 +396,24 @@ long-pass filter.
 
 H2 and H7 both succeed on 7/7 target runs: H2 ERT `2,549.4`, H7 ERT
 `3,409.6`; every other arm is `none`. Their optical quality is excellent
-(0.077 % / 0.024 % pass, 99.88 % / 99.94 % stop), but neither reaches the
-40-layer deep-screen threshold. This is a **negative depth-transfer result**:
-the long-pass 43–47-layer optimum does not carry over to the short-pass
-fixture, so the 40-layer depth is target-specific rather than a universal
-Recipe B requirement.
+(0.077 % / 0.024 % pass, 99.88 % / 99.94 % stop), but at the default 40-layer
+GA cap neither reaches the 40-layer deep-screen threshold.
+
+A cap sweep (`--max-layers`, applied to H0/H1/H2) changes the conclusion:
+
+| H2 cap | best merit | median merit | layers | pass R | stop R | ERT | deep |
+|---:|---:|---:|---:|---:|---:|---:|---|
+| 40 | 84.396742 | 260.588053 | 35 | 0.0772 % | 99.8788 % | 2,549.4 | no |
+| 42 | 78.149140 | 150.740856 | 39 | 0.0753 % | 99.9142 % | 1,803.0 | no |
+| 44 | **51.751173** | 1,720.715296 | **40** | **0.0655 %** | **99.9282 %** | 3,035.0 | **yes** |
+
+H7 stays at 38 layers for all three caps; its seeded bank does not grow
+further. The earlier “negative depth transfer” reading was therefore
+**cap-limited**: the default 40 cap is binding for H2 on short-pass, and with
+a 44-layer cap the GA finds a 40-layer, deep-screen-passing short-pass stack.
+The required GA width is target-specific, but the 40-layer count itself is
+reachable. H2 and H7 still separate from the other arms, but not from each
+other.
 
 The 28-pair family has 23 significant pairs. The five exceptions are H0–H3
 (`0.6976`), H1–H4 (`1.0000`), H1–H5 (`0.9528`), H2–H7 (`1.0000`), and

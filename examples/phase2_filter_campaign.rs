@@ -117,6 +117,7 @@ fn genome_from_stack(decoder: &Decoder, stack: &DesignStack) -> Genome {
 fn main() {
     let args = std::env::args().collect::<Vec<_>>();
     let seed_count = number(&args, "--seeds", 7).clamp(1, 20);
+    let max_layers = number(&args, "--max-layers", 40).clamp(2, 60);
     let fixture = args
         .iter()
         .position(|arg| arg == "--fixture")
@@ -199,13 +200,13 @@ fn main() {
         recipe: RecipeAConfig {
             population_size: 12,
             generations: 12,
-            max_layers: 40,
+            max_layers,
             mutation_sigma: 0.15,
             seed: None,
         },
         h0: H0Config {
             starts: 3,
-            max_layers: 40,
+            max_layers,
             mutation_sigma: 0.2,
             needle_steps: 1,
             seed: None,
